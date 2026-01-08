@@ -1,0 +1,52 @@
+{
+  "manifest_version": 2,
+  "name": "LinkScout",
+  "version": "1.0",
+  "description": "Saves links from selected text as bookmarks with smart organization.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "eu@paulista.systems",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
+    }
+  },
+  "icons": {
+    "48": "icons/linkscout-48.svg"
+  },
+  "permissions": [
+    "activeTab",
+    "contextMenus",
+    "bookmarks",
+    "notifications",
+    "storage",
+    "tabs",
+    "<all_urls>"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "browser_action": {
+    "default_icon": "icons/linkscout-48.svg",
+    "default_title": "LinkScout - Clique direito em texto selecionado para salvar links"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  }
+}

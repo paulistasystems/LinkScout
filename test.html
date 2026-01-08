@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LinkScout v2.0 - Teste Completo</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 900px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 10px;
+        }
+
+        .version {
+            text-align: center;
+            color: #ffd700;
+            margin-bottom: 30px;
+            font-size: 0.9em;
+        }
+
+        .section {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        h2 {
+            color: #ffd700;
+            margin-top: 0;
+        }
+
+        .links {
+            line-height: 2;
+        }
+
+        a {
+            color: #4fc3f7;
+            text-decoration: none;
+            transition: color 0.3s;
+        }
+
+        a:hover {
+            color: #81d4fa;
+        }
+
+        .instructions {
+            background: rgba(255, 215, 0, 0.2);
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #ffd700;
+            margin-bottom: 20px;
+        }
+
+        .new-features {
+            background: rgba(76, 175, 80, 0.2);
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #4caf50;
+            margin-bottom: 20px;
+        }
+
+        .new-features h3 {
+            margin-top: 0;
+            color: #4caf50;
+        }
+
+        .new-features ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+
+        code {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🔗 LinkScout - Teste Completo</h1>
+        <p class="version">Versão 2.0 - Agora com títulos reais e notificações!</p>
+
+        <div class="new-features">
+            <h3>✨ Novos Recursos v2.0</h3>
+            <ul>
+                <li><strong>Títulos Reais:</strong> Busca automaticamente o título de cada página</li>
+                <li><strong>Notificações:</strong> Feedback visual quando links são salvos</li>
+                <li><strong>Configurações:</strong> Customize pasta raiz e comportamento</li>
+                <li><strong>Favicons:</strong> Firefox adiciona ícones automaticamente</li>
+                <li><strong>Rate Limiting:</strong> Evita sobrecarga com delay entre requisições</li>
+            </ul>
+        </div>
+
+        <div class="instructions">
+            <strong>📋 Instruções:</strong>
+            <ol>
+                <li>Acesse as configurações da extensão (clique no ícone → Preferências)</li>
+                <li>Configure suas preferências (pasta raiz, busca de títulos, notificações)</li>
+                <li>Selecione o texto de uma das seções abaixo</li>
+                <li>Clique com o botão direito → "Save Links from Selection"</li>
+                <li>Aguarde a notificação de conclusão</li>
+                <li>Verifique seus favoritos: <code>Pasta Raiz / domínio / título da página</code></li>
+            </ol>
+        </div>
+
+        <div class="section">
+            <h2>🐙 GitHub - Frameworks Populares</h2>
+            <div class="links">
+                Frameworks JavaScript modernos:<br>
+                https://github.com/facebook/react<br>
+                https://github.com/vuejs/vue<br>
+                https://github.com/angular/angular<br>
+                https://github.com/sveltejs/svelte
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>📚 MDN Web Docs</h2>
+            <div class="links">
+                Documentação essencial:<br>
+                https://developer.mozilla.org/en-US/docs/Web/JavaScript<br>
+                https://developer.mozilla.org/en-US/docs/Web/API<br>
+                https://developer.mozilla.org/en-US/docs/Web/CSS
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>🎨 Design e Ferramentas</h2>
+            <div class="links">
+                Recursos de design:<br>
+                https://www.figma.com/design/<br>
+                https://www.canva.com/templates/<br>
+                https://dribbble.com/shots/popular
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>🌐 Comunidades de Desenvolvimento</h2>
+            <div class="links">
+                Onde desenvolvedores se encontram:<br>
+                https://stackoverflow.com/questions/tagged/javascript<br>
+                https://www.reddit.com/r/webdev/<br>
+                https://news.ycombinator.com/<br>
+                https://dev.to/t/javascript
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>🚀 Teste de Performance</h2>
+            <div class="links">
+                Links para testar rate limiting (10 links):<br>
+                https://github.com/microsoft/vscode<br>
+                https://github.com/nodejs/node<br>
+                https://github.com/denoland/deno<br>
+                https://github.com/rust-lang/rust<br>
+                https://github.com/golang/go<br>
+                https://github.com/python/cpython<br>
+                https://github.com/torvalds/linux<br>
+                https://github.com/kubernetes/kubernetes<br>
+                https://github.com/docker/docker-ce<br>
+                https://github.com/tensorflow/tensorflow
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>
