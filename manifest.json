@@ -5,7 +5,7 @@
   "description": "Saves links from selected text as bookmarks with smart organization.",
   "browser_specific_settings": {
     "gecko": {
-      "id": "linkscout@paulista.systems",
+      "id": "linkscout@paulista.dev",
       "data_collection_permissions": {
         "required": [
           "none"
