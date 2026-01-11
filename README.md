@@ -4,7 +4,20 @@ A Firefox extension that saves links from selected text as bookmarks with smart 
 
 ## Description
 
-LinkScout allows you to select text on any webpage, right-click, and save all links found within the selection as organized bookmarks. Links are automatically organized into folders based on the page title where they were found.
+LinkScout allows you to save links to your bookmarks with automatic organization. It provides multiple ways to save:
+- **Save links from text selection** - Select text containing links and save them all at once
+- **Save individual links** - Right-click directly on any link to save it
+- **Save all tabs** - Save and close all open tabs with one click
+
+Links are automatically organized into folders based on the page title where they were found.
+
+## Features
+
+- 🔗 **Save Links from Selection** - Extract and save all links from selected text
+- 🔗 **Save Single Link** - Right-click on any link to save it directly
+- 📑 **Save & Close All Tabs** - Save all open tabs and close them (creates a session folder)
+- 📁 **Smart Organization** - Links saved under `LinkScout / [Page Title] / [Link]`
+- ⚙️ **Configurable** - Choose bookmark location and folder name
 
 ## Build Instructions
 
@@ -28,11 +41,11 @@ LinkScout allows you to select text on any webpage, right-click, and save all li
 
    Or manually create the zip:
    ```bash
-   zip -r linkscout-v1.0.zip manifest.json background.js content.js options.html options.js icons/ -x "*.DS_Store"
+   zip -r linkscout-v1.1.zip manifest.json background.js content.js options.html options.js icons/ -x "*.DS_Store"
    ```
 
 3. **Output**
-   - The build creates `linkscout-v1.0.zip` in the project root directory.
+   - The build creates `linkscout-v1.1.zip` in the project root directory.
 
 ### Project Structure
 
@@ -76,15 +89,26 @@ This extension is written in plain JavaScript with no external dependencies or b
 
 ## Usage
 
+### Save Links from Selection
 1. Select text containing links on any webpage
 2. Right-click to open the context menu
-3. Click "LinkScout: Salvar links selecionados"
-4. Links are saved to your bookmarks under `LinkScout / [Page Title] / [Link Title]`
+3. Click "🔗 LinkScout: Salvar Links da Seleção"
+
+### Save a Single Link
+1. Right-click directly on any link
+2. Click "🔗 LinkScout: Salvar Este Link"
+
+### Save All Tabs
+1. Right-click on any tab or page
+2. Click "🔗 LinkScout: Salvar e Fechar Todas as Abas"
+3. All tabs are saved and closed, a new blank tab is created
 
 ## Configuration
 
 Access the extension options to configure:
-- Custom bookmark folder location (default: Bookmarks Menu)
+- **Bookmark Location**: Toolbar, Menu, or Other Bookmarks
+- **Root Folder Name**: Default is "LinkScout"
+- **Notifications**: Enable/disable save notifications
 
 ## License
 
