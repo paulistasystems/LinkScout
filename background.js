@@ -1,5 +1,4 @@
 // LinkScout background.js
-console.log("🔗 LinkScout: Background script loaded!");
 
 // Default settings
 const DEFAULT_SETTINGS = {
@@ -9,25 +8,19 @@ const DEFAULT_SETTINGS = {
 };
 
 function extractLinks(text) {
-  console.log("🔍 extractLinks: Input text:", text);
   const urlRegex = /(https?:\/\/[^\s]+)/g;
   const matches = text.match(urlRegex);
-  console.log("🔍 extractLinks: Found matches:", matches);
   return matches ? matches : [];
 }
 
 function extractDomain(url) {
   try {
     const urlObj = new URL(url);
-    console.log("🌐 extractDomain:", url, "->", urlObj.hostname);
     return urlObj.hostname;
   } catch (e) {
-    console.error("❌ Invalid URL:", url, e);
     return "unknown";
   }
 }
-
-// Removed fetchPageTitle function - using URL as bookmark title directly
 
 // Delay function for rate limiting
 function delay(ms) {
@@ -35,143 +28,88 @@ function delay(ms) {
 }
 
 async function findOrCreateFolder(parentId, title) {
-  console.log("📁 findOrCreateFolder: Looking for folder:", title, "in parent:", parentId);
   try {
     const children = await browser.bookmarks.getChildren(parentId);
-    console.log("📁 findOrCreateFolder: Found", children.length, "children:");
-    children.forEach((child, i) => {
-      console.log(`   ${i + 1}. "${child.title}" (id: ${child.id}, type: ${child.url ? 'bookmark' : 'folder'})`);
-    });
-
     const existingFolder = children.find(child => child.title === title && !child.url);
 
     if (existingFolder) {
-      console.log("📁 findOrCreateFolder: REUSING existing folder:", existingFolder.id, existingFolder.title);
-      // Verify folder contents
-      const folderContents = await browser.bookmarks.getChildren(existingFolder.id);
-      console.log("📁 Existing folder has", folderContents.length, "bookmarks inside");
       return existingFolder;
     }
 
-    console.log("📁 findOrCreateFolder: Creating NEW folder:", title);
     const newFolder = await browser.bookmarks.create({
       parentId: parentId,
       title: title
     });
-    console.log("📁 findOrCreateFolder: Created folder with ID:", newFolder.id);
     return newFolder;
   } catch (error) {
-    console.error("❌ findOrCreateFolder: Error:", error);
     throw error;
   }
 }
 
 async function createBookmarkStructure(links, pageTitle, settings) {
-  console.log("🚀 createBookmarkStructure: Starting...");
-
   // Remove duplicate links
   const uniqueLinks = [...new Set(links)];
-  const duplicatesRemoved = links.length - uniqueLinks.length;
-  if (duplicatesRemoved > 0) {
-    console.log(`🔄 Removed ${duplicatesRemoved} duplicate link(s)`);
-  }
   links = uniqueLinks;
 
-  console.log("🚀 Links count:", links.length);
-  console.log("🚀 Page Title:", pageTitle);
-  console.log("🚀 Settings:", JSON.stringify(settings));
-
-  const startTime = Date.now();
   let successCount = 0;
   let failCount = 0;
 
   try {
     // Get bookmark location from settings
     let parentId = settings.bookmarkLocation || 'toolbar_____';
-    console.log("📌 Using bookmark location from settings:", parentId);
 
     // Verify the location exists
     try {
-      const children = await browser.bookmarks.getChildren(parentId);
-      console.log("📌 Bookmark location accessible, has", children.length, "children");
+      await browser.bookmarks.getChildren(parentId);
     } catch (locationError) {
-      console.warn("⚠️ Could not access configured location:", parentId);
-      console.warn("⚠️ Error:", locationError.message);
-
       // Fallback to toolbar
       parentId = "toolbar_____";
-      console.log("📌 Falling back to toolbar:", parentId);
 
       try {
         await browser.bookmarks.getChildren(parentId);
       } catch (toolbarError) {
         // Fallback to menu
         parentId = "menu________";
-        console.log("📌 Falling back to menu:", parentId);
       }
     }
 
     // Create or find root folder
     const rootFolderName = settings.rootFolder || 'LinkScout';
-    console.log("📌 Root folder name:", rootFolderName);
-
-    console.log("📁 Creating/finding root folder in:", parentId);
     const linkScoutFolder = await findOrCreateFolder(parentId, rootFolderName);
-    console.log("✅ Root folder created/found:", JSON.stringify(linkScoutFolder));
 
     // Create folder with page title
-    console.log("📝 Creating/finding page title folder:", pageTitle);
     const pageTitleFolder = await findOrCreateFolder(linkScoutFolder.id, pageTitle);
-    console.log("✅ Page title folder:", pageTitleFolder.id);
 
     // Create bookmarks directly in page title folder
     for (const link of links) {
       try {
-        console.log("💾 Creating bookmark in folder:", pageTitleFolder.id);
-        const bookmark = await browser.bookmarks.create({
+        await browser.bookmarks.create({
           parentId: pageTitleFolder.id,
           title: link,
           url: link
         });
-        console.log("✅ Bookmark created with ID:", bookmark.id);
-
         successCount++;
       } catch (error) {
-        console.error(`❌ Failed to create bookmark for ${link.substring(0, 50)}:`, error.message);
         failCount++;
       }
     }
-
-    console.log(`✅ Saved ${links.length} links from page: ${pageTitle}`);
-
-    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`🎉 Successfully saved ${successCount} links in ${duration}s`);
 
     if (settings.showNotifications) {
       const message = failCount > 0
         ? `Salvos: ${successCount} | Falhas: ${failCount}`
         : `${successCount} link${successCount !== 1 ? 's' : ''} salvo${successCount !== 1 ? 's' : ''} com sucesso!`;
 
-      console.log("🔔 Sending notification:", message);
       browser.notifications.create({
         type: 'basic',
         iconUrl: browser.runtime.getURL('icons/linkscout-48.svg'),
         title: 'LinkScout',
         message: message
-      }).then((notificationId) => {
-        console.log("✅ Notification created with ID:", notificationId);
-      }).catch((error) => {
-        console.error("❌ Failed to create notification:", error);
       });
     }
 
     return { successCount, failCount };
 
   } catch (error) {
-    console.error("❌ Error in createBookmarkStructure:", error);
-    console.error("❌ Error message:", error.message);
-    console.error("❌ Error stack:", error.stack);
-
     if (settings.showNotifications) {
       browser.notifications.create({
         type: 'basic',
@@ -187,12 +125,8 @@ async function createBookmarkStructure(links, pageTitle, settings) {
 
 // Function to save all tabs and close them
 async function saveAllTabsAndClose() {
-  console.log("🔗 saveAllTabsAndClose: Starting...");
-
   const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
   const tabs = await browser.tabs.query({ currentWindow: true });
-
-  console.log("📑 Found", tabs.length, "tabs to save");
 
   if (tabs.length === 0) {
     if (settings.showNotifications) {
@@ -241,7 +175,6 @@ async function saveAllTabsAndClose() {
     // Create bookmarks directly in session folder (no domain subfolder)
     for (const tab of tabs) {
       if (!tab.url || tab.url.startsWith('about:') || tab.url.startsWith('moz-extension:')) {
-        console.log("⏭️ Skipping internal tab:", tab.url);
         continue;
       }
 
@@ -253,21 +186,15 @@ async function saveAllTabsAndClose() {
         });
         successCount++;
         tabsToClose.push(tab.id);
-        console.log("✅ Saved tab:", tab.title);
       } catch (error) {
-        console.error("❌ Failed to save tab:", tab.url, error.message);
         failCount++;
       }
     }
 
     // Close all saved tabs
     if (tabsToClose.length > 0) {
-      console.log("🔒 Closing", tabsToClose.length, "tabs...");
-
       // Create a new blank tab first to prevent browser from closing
-      console.log("📄 Creating new blank tab...");
       await browser.tabs.create({ active: true });
-
       await browser.tabs.remove(tabsToClose);
     }
 
@@ -285,7 +212,6 @@ async function saveAllTabsAndClose() {
     }
 
   } catch (error) {
-    console.error("❌ Error in saveAllTabsAndClose:", error);
     if (settings.showNotifications) {
       browser.notifications.create({
         type: 'basic',
@@ -299,8 +225,6 @@ async function saveAllTabsAndClose() {
 
 // Function to create context menus
 async function createContextMenus() {
-  console.log("🔗 LinkScout: Creating context menus...");
-
   // Remove all existing menus first
   await browser.contextMenus.removeAll();
 
@@ -319,7 +243,7 @@ async function createContextMenus() {
 
   browser.contextMenus.create({
     id: "linkscout-save-all-tabs",
-    title: "� LinkScout: Salvar e Fechar Todas as Abas",
+    title: "🔗 LinkScout: Salvar e Fechar Todas as Abas",
     contexts: ["page"]
   });
 
@@ -328,68 +252,43 @@ async function createContextMenus() {
     title: "🔗 LinkScout: Salvar e Fechar Todas as Abas",
     contexts: ["tab"]
   });
-
-  console.log("✅ Context menus created successfully!");
 }
 
 // Create menus on startup
 createContextMenus();
 
 browser.contextMenus.onClicked.addListener(async (info, tab) => {
-  console.log("🖱️ Context menu clicked!");
-  console.log("🖱️ Menu Item ID:", info.menuItemId);
-  console.log("🖱️ Selection Text:", info.selectionText);
-  console.log("🖱️ Tab:", tab);
-
   if (info.menuItemId === "linkscout-save-links") {
-    console.log("✅ Correct menu item clicked");
-
     // Try to get links from content script first (extracts actual href attributes)
     let links = [];
     let pageTitle = tab.title || "Untitled Page";
 
     try {
-      console.log("📨 Sending message to content script...");
       const response = await browser.tabs.sendMessage(tab.id, { action: "getSelectedLinks" });
-      console.log("📬 Response from content script:", response);
 
       if (response && response.links && response.links.length > 0) {
         links = response.links;
         pageTitle = response.pageTitle || pageTitle;
-        console.log("✅ Got links from content script:", links);
       }
     } catch (error) {
-      console.warn("⚠️ Content script not available, falling back to text extraction:", error.message);
+      // Content script not available, will fall back to text extraction
     }
 
     // Fallback: try to extract URLs from selection text
     if (links.length === 0 && info.selectionText) {
-      console.log("🔄 Falling back to text extraction...");
       links = extractLinks(info.selectionText);
-      console.log("🔗 Extracted links from text:", links);
     }
 
     if (links.length > 0) {
-      console.log("✅ Found", links.length, "links");
-
       // Load settings
-      console.log("⚙️ Loading settings...");
       const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
-      console.log("⚙️ Settings loaded:", settings);
 
-      console.log("📄 Page title:", pageTitle);
-
-      console.log("🚀 Calling createBookmarkStructure...");
       try {
         await createBookmarkStructure(links, pageTitle, settings);
-        console.log("✅ createBookmarkStructure completed successfully");
       } catch (error) {
-        console.error("❌ Error calling createBookmarkStructure:", error);
-        console.error("❌ Error stack:", error.stack);
+        // Error handled in createBookmarkStructure
       }
     } else {
-      console.log("⚠️ No links found in selection.");
-
       // Show notification about no links found
       const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
       if (settings.showNotifications) {
@@ -402,29 +301,18 @@ browser.contextMenus.onClicked.addListener(async (info, tab) => {
       }
     }
   } else if (info.menuItemId === "linkscout-save-single-link") {
-    console.log("✅ Save Single Link menu item clicked");
-    console.log("🔗 Link URL:", info.linkUrl);
-
     if (info.linkUrl) {
       const pageTitle = tab.title || "Untitled Page";
       const links = [info.linkUrl];
 
-      console.log("⚙️ Loading settings...");
       const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
-      console.log("⚙️ Settings loaded:", settings);
 
-      console.log("📄 Page title:", pageTitle);
-
-      console.log("🚀 Calling createBookmarkStructure for single link...");
       try {
         await createBookmarkStructure(links, pageTitle, settings);
-        console.log("✅ createBookmarkStructure completed successfully");
       } catch (error) {
-        console.error("❌ Error calling createBookmarkStructure:", error);
-        console.error("❌ Error stack:", error.stack);
+        // Error handled in createBookmarkStructure
       }
     } else {
-      console.warn("⚠️ No link URL found");
       const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
       if (settings.showNotifications) {
         browser.notifications.create({
@@ -436,11 +324,6 @@ browser.contextMenus.onClicked.addListener(async (info, tab) => {
       }
     }
   } else if (info.menuItemId === "linkscout-save-all-tabs" || info.menuItemId === "linkscout-save-all-tabs-tab") {
-    console.log("✅ Save All Tabs menu item clicked");
     await saveAllTabsAndClose();
-  } else {
-    console.log("⚠️ Unknown menu item");
   }
 });
-
-console.log("🔗 LinkScout: Background script setup complete!");
