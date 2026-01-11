@@ -111,7 +111,7 @@ async function createBookmarkStructure(links, pageTitle, settings) {
     console.log("✅ Root folder created/found:", JSON.stringify(linkScoutFolder));
 
     // Create folder with page title
-    console.log("� Creating/finding page title folder:", pageTitle);
+    console.log("📝 Creating/finding page title folder:", pageTitle);
     const pageTitleFolder = await findOrCreateFolder(linkScoutFolder.id, pageTitle);
     console.log("✅ Page title folder:", pageTitleFolder.id);
 
@@ -149,6 +149,10 @@ async function createBookmarkStructure(links, pageTitle, settings) {
         iconUrl: browser.runtime.getURL('icons/linkscout-48.svg'),
         title: 'LinkScout',
         message: message
+      }).then((notificationId) => {
+        console.log("✅ Notification created with ID:", notificationId);
+      }).catch((error) => {
+        console.error("❌ Failed to create notification:", error);
       });
     }
 
@@ -284,46 +288,43 @@ async function saveAllTabsAndClose() {
   }
 }
 
-console.log("🔗 LinkScout: Creating context menus...");
+// Function to create context menus
+async function createContextMenus() {
+  console.log("🔗 LinkScout: Creating context menus...");
 
-// Context menu for saving links from selection
-browser.contextMenus.create({
-  id: "linkscout-save-links",
-  title: "Save Links from Selection",
-  contexts: ["selection"]
-}, () => {
-  if (browser.runtime.lastError) {
-    console.error("❌ Error creating context menu:", browser.runtime.lastError);
-  } else {
-    console.log("✅ Context menu 'Save Links' created successfully!");
-  }
-});
+  // Remove all existing menus first
+  await browser.contextMenus.removeAll();
 
-// Context menu for saving all tabs (on page)
-browser.contextMenus.create({
-  id: "linkscout-save-all-tabs",
-  title: "📑 Salvar e Fechar Todas as Abas",
-  contexts: ["page"]
-}, () => {
-  if (browser.runtime.lastError) {
-    console.error("❌ Error creating context menu:", browser.runtime.lastError);
-  } else {
-    console.log("✅ Context menu 'Save All Tabs' created successfully!");
-  }
-});
+  // Create menu items directly
+  browser.contextMenus.create({
+    id: "linkscout-save-links",
+    title: "🔗 LinkScout: Salvar Links da Seleção",
+    contexts: ["selection"]
+  });
 
-// Context menu for saving all tabs (on tab)
-browser.contextMenus.create({
-  id: "linkscout-save-all-tabs-tab",
-  title: "📑 Salvar e Fechar Todas as Abas",
-  contexts: ["tab"]
-}, () => {
-  if (browser.runtime.lastError) {
-    console.error("❌ Error creating context menu:", browser.runtime.lastError);
-  } else {
-    console.log("✅ Context menu 'Save All Tabs (tab)' created successfully!");
-  }
-});
+  browser.contextMenus.create({
+    id: "linkscout-save-single-link",
+    title: "🔗 LinkScout: Salvar Este Link",
+    contexts: ["link"]
+  });
+
+  browser.contextMenus.create({
+    id: "linkscout-save-all-tabs",
+    title: "� LinkScout: Salvar e Fechar Todas as Abas",
+    contexts: ["page"]
+  });
+
+  browser.contextMenus.create({
+    id: "linkscout-save-all-tabs-tab",
+    title: "🔗 LinkScout: Salvar e Fechar Todas as Abas",
+    contexts: ["tab"]
+  });
+
+  console.log("✅ Context menus created successfully!");
+}
+
+// Create menus on startup
+createContextMenus();
 
 browser.contextMenus.onClicked.addListener(async (info, tab) => {
   console.log("🖱️ Context menu clicked!");
@@ -388,6 +389,40 @@ browser.contextMenus.onClicked.addListener(async (info, tab) => {
           iconUrl: browser.runtime.getURL('icons/linkscout-48.svg'),
           title: 'LinkScout',
           message: 'Nenhum link encontrado na seleção.'
+        });
+      }
+    }
+  } else if (info.menuItemId === "linkscout-save-single-link") {
+    console.log("✅ Save Single Link menu item clicked");
+    console.log("🔗 Link URL:", info.linkUrl);
+
+    if (info.linkUrl) {
+      const pageTitle = tab.title || "Untitled Page";
+      const links = [info.linkUrl];
+
+      console.log("⚙️ Loading settings...");
+      const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
+      console.log("⚙️ Settings loaded:", settings);
+
+      console.log("📄 Page title:", pageTitle);
+
+      console.log("🚀 Calling createBookmarkStructure for single link...");
+      try {
+        await createBookmarkStructure(links, pageTitle, settings);
+        console.log("✅ createBookmarkStructure completed successfully");
+      } catch (error) {
+        console.error("❌ Error calling createBookmarkStructure:", error);
+        console.error("❌ Error stack:", error.stack);
+      }
+    } else {
+      console.warn("⚠️ No link URL found");
+      const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
+      if (settings.showNotifications) {
+        browser.notifications.create({
+          type: 'basic',
+          iconUrl: browser.runtime.getURL('icons/linkscout-48.svg'),
+          title: 'LinkScout',
+          message: 'Nenhum link encontrado.'
         });
       }
     }

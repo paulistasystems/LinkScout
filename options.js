@@ -30,8 +30,6 @@ async function saveSettings() {
         showNotifications: document.getElementById('showNotifications').checked,
         bookmarkLocation: document.getElementById('bookmarkLocation').value
     };
-
-
     try {
         await browser.storage.sync.set(settings);
         console.log('Settings saved:', settings);
