@@ -55,10 +55,24 @@ This extension is written in plain JavaScript with no external dependencies or b
 
 ## Installation for Development
 
-1. Open Firefox and navigate to `about:debugging`
-2. Click "This Firefox" in the left sidebar
-3. Click "Load Temporary Add-on..."
-4. Select the `manifest.json` file from the project directory
+### Load the Extension in Firefox
+
+1. **Open Firefox**
+2. **Type in the address bar:** `about:debugging#/runtime/this-firefox`
+3. **Click "Load Temporary Add-on..."**
+4. **Navigate to the folder** containing the extension files.
+5. **Select the file** `manifest.json`.
+6. The extension will be temporarily loaded.
+
+### Debugging
+
+**View extension logs:**
+- Open Browser Console: `Ctrl+Shift+J` (Windows/Linux) or `Cmd+Shift+J` (Mac).
+
+**Reload after changes:**
+1. Go back to `about:debugging#/runtime/this-firefox`.
+2. Click **"Reload"** next to the LinkScout extension.
+3. Or press `Ctrl+R` on the debugging page.
 
 ## Usage
 

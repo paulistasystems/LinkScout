@@ -38,20 +38,27 @@ async function findOrCreateFolder(parentId, title) {
   console.log("📁 findOrCreateFolder: Looking for folder:", title, "in parent:", parentId);
   try {
     const children = await browser.bookmarks.getChildren(parentId);
-    console.log("📁 findOrCreateFolder: Found children:", children.length);
+    console.log("📁 findOrCreateFolder: Found", children.length, "children:");
+    children.forEach((child, i) => {
+      console.log(`   ${i + 1}. "${child.title}" (id: ${child.id}, type: ${child.url ? 'bookmark' : 'folder'})`);
+    });
+
     const existingFolder = children.find(child => child.title === title && !child.url);
 
     if (existingFolder) {
-      console.log("📁 findOrCreateFolder: Found existing folder:", existingFolder);
+      console.log("📁 findOrCreateFolder: REUSING existing folder:", existingFolder.id, existingFolder.title);
+      // Verify folder contents
+      const folderContents = await browser.bookmarks.getChildren(existingFolder.id);
+      console.log("📁 Existing folder has", folderContents.length, "bookmarks inside");
       return existingFolder;
     }
 
-    console.log("📁 findOrCreateFolder: Creating new folder:", title);
+    console.log("📁 findOrCreateFolder: Creating NEW folder:", title);
     const newFolder = await browser.bookmarks.create({
       parentId: parentId,
       title: title
     });
-    console.log("📁 findOrCreateFolder: Created folder:", newFolder);
+    console.log("📁 findOrCreateFolder: Created folder with ID:", newFolder.id);
     return newFolder;
   } catch (error) {
     console.error("❌ findOrCreateFolder: Error:", error);
