@@ -68,6 +68,15 @@ async function findOrCreateFolder(parentId, title) {
 
 async function createBookmarkStructure(links, pageTitle, settings) {
   console.log("🚀 createBookmarkStructure: Starting...");
+
+  // Remove duplicate links
+  const uniqueLinks = [...new Set(links)];
+  const duplicatesRemoved = links.length - uniqueLinks.length;
+  if (duplicatesRemoved > 0) {
+    console.log(`🔄 Removed ${duplicatesRemoved} duplicate link(s)`);
+  }
+  links = uniqueLinks;
+
   console.log("🚀 Links count:", links.length);
   console.log("🚀 Page Title:", pageTitle);
   console.log("🚀 Settings:", JSON.stringify(settings));
