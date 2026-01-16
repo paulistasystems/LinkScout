@@ -2,14 +2,23 @@
 
 A Firefox extension that saves links from selected text as bookmarks with smart organization.
 
-## Description
+## Summary (for Firefox AMO - no markdown, max 250 chars)
 
-LinkScout allows you to save links to your bookmarks with automatic organization. It provides multiple ways to save:
+Save links from selected text as bookmarks with smart organization. Extract multiple links at once, save individual links, or save all tabs. Automatic folder organization and duplicate detection.
+
+## Description (for Firefox AMO - supports markdown)
+
+LinkScout makes it easy to save and organize links from any webpage. Whether you're researching, collecting resources, or just want to save interesting links for later, LinkScout has you covered.
+
+**Multiple ways to save:**
 - **Save links from text selection** - Select text containing links and save them all at once
 - **Save individual links** - Right-click directly on any link to save it
 - **Save all tabs** - Save and close all open tabs with one click
 
-Links are automatically organized into folders based on the page title where they were found.
+**Smart organization:**
+- Links are automatically organized into folders based on the page title
+- Duplicate detection prevents saving the same link twice
+- Option to show newest links/folders at the top
 
 ## Features
 
