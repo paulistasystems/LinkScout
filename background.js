@@ -10,7 +10,6 @@ browser.runtime.onInstalled.addListener((details) => {
 // Default settings
 const DEFAULT_SETTINGS = {
   rootFolder: 'LinkScout',
-  showNotifications: true,
   bookmarkLocation: 'toolbar_____', // toolbar_____, menu________, unfiled_____
   updateExistingTitles: false, // Update title of existing bookmarks if URL matches
   newestLinksFirst: true // New links appear at the top of the folder
@@ -148,34 +147,12 @@ async function createBookmarkStructure(links, pageTitle, settings) {
       }
     }
 
-    if (settings.showNotifications) {
-      let message = '';
-      const parts = [];
-      if (successCount > 0) parts.push(`${successCount} salvo${successCount !== 1 ? 's' : ''}`);
-      if (skippedCount > 0) parts.push(`${skippedCount} duplicado${skippedCount !== 1 ? 's' : ''}`);
-      if (updatedCount > 0) parts.push(`${updatedCount} atualizado${updatedCount !== 1 ? 's' : ''}`);
-      if (failCount > 0) parts.push(`${failCount} falha${failCount !== 1 ? 's' : ''}`);
-      message = parts.join(' | ');
-
-      browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('icons/linkscout-48.svg'),
-        title: 'LinkScout',
-        message: message || 'Nenhum link para salvar.'
-      });
-    }
+    // Removed notification code - Firefox notifications are unreliable
 
     return { successCount, skippedCount, updatedCount, failCount };
 
   } catch (error) {
-    if (settings.showNotifications) {
-      browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('icons/linkscout-48.svg'),
-        title: 'LinkScout - Erro',
-        message: 'Erro ao salvar favoritos: ' + error.message
-      });
-    }
+    // Removed notification code - Firefox notifications are unreliable
 
     throw error;
   }
@@ -187,14 +164,7 @@ async function saveAllTabsAndClose() {
   const tabs = await browser.tabs.query({ currentWindow: true });
 
   if (tabs.length === 0) {
-    if (settings.showNotifications) {
-      browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('icons/linkscout-48.svg'),
-        title: 'LinkScout',
-        message: 'Nenhuma aba para salvar.'
-      });
-    }
+    // Removed notification code - Firefox notifications are unreliable
     return;
   }
 
@@ -264,32 +234,10 @@ async function saveAllTabsAndClose() {
       await browser.tabs.remove(tabsToClose);
     }
 
-    if (settings.showNotifications) {
-      const parts = [];
-      const savedClosed = successCount + skippedCount + updatedCount;
-      if (savedClosed > 0) parts.push(`${savedClosed} aba${savedClosed !== 1 ? 's' : ''} fechada${savedClosed !== 1 ? 's' : ''}`);
-      if (skippedCount > 0) parts.push(`${skippedCount} duplicada${skippedCount !== 1 ? 's' : ''}`);
-      if (updatedCount > 0) parts.push(`${updatedCount} atualizada${updatedCount !== 1 ? 's' : ''}`);
-      if (failCount > 0) parts.push(`${failCount} falha${failCount !== 1 ? 's' : ''}`);
-      const message = parts.join(' | ') || 'Nenhuma aba para salvar.';
-
-      browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('icons/linkscout-48.svg'),
-        title: 'LinkScout',
-        message: message
-      });
-    }
+    // Removed notification code - Firefox notifications are unreliable
 
   } catch (error) {
-    if (settings.showNotifications) {
-      browser.notifications.create({
-        type: 'basic',
-        iconUrl: browser.runtime.getURL('icons/linkscout-48.svg'),
-        title: 'LinkScout - Erro',
-        message: 'Erro ao salvar abas: ' + error.message
-      });
-    }
+    // Removed notification code - Firefox notifications are unreliable
   }
 }
 
@@ -361,14 +309,7 @@ browser.contextMenus.onClicked.addListener(async (info, tab) => {
     } else {
       // Show notification about no links found
       const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
-      if (settings.showNotifications) {
-        browser.notifications.create({
-          type: 'basic',
-          iconUrl: browser.runtime.getURL('icons/linkscout-48.svg'),
-          title: 'LinkScout',
-          message: 'Nenhum link encontrado na seleção.'
-        });
-      }
+      // Removed notification code - Firefox notifications are unreliable
     }
   } else if (info.menuItemId === "linkscout-save-single-link") {
     if (info.linkUrl) {
@@ -384,14 +325,7 @@ browser.contextMenus.onClicked.addListener(async (info, tab) => {
       }
     } else {
       const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
-      if (settings.showNotifications) {
-        browser.notifications.create({
-          type: 'basic',
-          iconUrl: browser.runtime.getURL('icons/linkscout-48.svg'),
-          title: 'LinkScout',
-          message: 'Nenhum link encontrado.'
-        });
-      }
+      // Removed notification code - Firefox notifications are unreliable
     }
   } else if (info.menuItemId === "linkscout-save-all-tabs" || info.menuItemId === "linkscout-save-all-tabs-tab") {
     await saveAllTabsAndClose();

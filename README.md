@@ -119,7 +119,6 @@ This extension is written in plain JavaScript with no external dependencies or b
 Access the extension options to configure:
 - **Bookmark Location**: Toolbar, Menu, or Other Bookmarks
 - **Root Folder Name**: Default is "LinkScout"
-- **Notifications**: Enable/disable save notifications
 - **Update Existing Titles**: Update bookmark titles when duplicates are found
 - **Newest Links First**: Show newest links/folders at the top (enabled by default)
 

@@ -3,7 +3,6 @@
 // Default settings
 const DEFAULT_SETTINGS = {
     rootFolder: 'LinkScout',
-    showNotifications: true,
     bookmarkLocation: 'toolbar_____',
     updateExistingTitles: false,
     newestLinksFirst: true
@@ -15,7 +14,6 @@ async function loadSettings() {
         const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
 
         document.getElementById('rootFolder').value = settings.rootFolder;
-        document.getElementById('showNotifications').checked = settings.showNotifications;
         document.getElementById('bookmarkLocation').value = settings.bookmarkLocation;
         document.getElementById('updateExistingTitles').checked = settings.updateExistingTitles;
         document.getElementById('newestLinksFirst').checked = settings.newestLinksFirst;
@@ -31,7 +29,6 @@ async function loadSettings() {
 async function saveSettings() {
     const settings = {
         rootFolder: document.getElementById('rootFolder').value.trim() || 'LinkScout',
-        showNotifications: document.getElementById('showNotifications').checked,
         bookmarkLocation: document.getElementById('bookmarkLocation').value,
         updateExistingTitles: document.getElementById('updateExistingTitles').checked,
         newestLinksFirst: document.getElementById('newestLinksFirst').checked
