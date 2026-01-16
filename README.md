@@ -17,7 +17,9 @@ Links are automatically organized into folders based on the page title where the
 - 🔗 **Save Single Link** - Right-click on any link to save it directly
 - 📑 **Save & Close All Tabs** - Save all open tabs and close them (creates a session folder)
 - 📁 **Smart Organization** - Links saved under `LinkScout / [Page Title] / [Link]`
-- ⚙️ **Configurable** - Choose bookmark location and folder name
+- 🔄 **Duplicate Detection** - Automatically detects and skips duplicate links in the same folder
+- ⬆️ **Newest First** - Option to show newest links/folders at the top (configurable)
+- ⚙️ **Configurable** - Choose bookmark location, folder name and more
 
 ## Build Instructions
 
@@ -109,6 +111,8 @@ Access the extension options to configure:
 - **Bookmark Location**: Toolbar, Menu, or Other Bookmarks
 - **Root Folder Name**: Default is "LinkScout"
 - **Notifications**: Enable/disable save notifications
+- **Update Existing Titles**: Update bookmark titles when duplicates are found
+- **Newest Links First**: Show newest links/folders at the top (enabled by default)
 
 ## License
 

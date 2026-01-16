@@ -4,7 +4,9 @@
 const DEFAULT_SETTINGS = {
   rootFolder: 'LinkScout',
   showNotifications: true,
-  bookmarkLocation: 'toolbar_____' // toolbar_____, menu________, unfiled_____
+  bookmarkLocation: 'toolbar_____', // toolbar_____, menu________, unfiled_____
+  updateExistingTitles: false, // Update title of existing bookmarks if URL matches
+  newestLinksFirst: true // New links appear at the top of the folder
 };
 
 function extractLinks(text) {
@@ -27,7 +29,7 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function findOrCreateFolder(parentId, title) {
+async function findOrCreateFolder(parentId, title, index = undefined) {
   try {
     const children = await browser.bookmarks.getChildren(parentId);
     const existingFolder = children.find(child => child.title === title && !child.url);
@@ -36,14 +38,48 @@ async function findOrCreateFolder(parentId, title) {
       return existingFolder;
     }
 
-    const newFolder = await browser.bookmarks.create({
+    const createOptions = {
       parentId: parentId,
       title: title
-    });
+    };
+    if (index !== undefined) {
+      createOptions.index = index;
+    }
+    const newFolder = await browser.bookmarks.create(createOptions);
     return newFolder;
   } catch (error) {
     throw error;
   }
+}
+
+// Find existing bookmark by URL in a folder
+async function findExistingBookmark(parentId, url) {
+  try {
+    const children = await browser.bookmarks.getChildren(parentId);
+    return children.find(child => child.url === url);
+  } catch (error) {
+    return null;
+  }
+}
+
+// Create or update bookmark, avoiding duplicates
+async function createOrUpdateBookmark(parentId, title, url, updateTitleIfExists = false, index = undefined) {
+  const existing = await findExistingBookmark(parentId, url);
+
+  if (existing) {
+    if (updateTitleIfExists && existing.title !== title) {
+      await browser.bookmarks.update(existing.id, { title });
+      return { action: 'updated', bookmark: existing };
+    }
+    return { action: 'skipped', bookmark: existing };
+  }
+
+  const createOptions = { parentId, title, url };
+  if (index !== undefined) {
+    createOptions.index = index;
+  }
+  const newBookmark = await browser.bookmarks.create(createOptions);
+  return { action: 'created', bookmark: newBookmark };
 }
 
 async function createBookmarkStructure(links, pageTitle, settings) {
@@ -52,6 +88,8 @@ async function createBookmarkStructure(links, pageTitle, settings) {
   links = uniqueLinks;
 
   let successCount = 0;
+  let skippedCount = 0;
+  let updatedCount = 0;
   let failCount = 0;
 
   try {
@@ -78,36 +116,46 @@ async function createBookmarkStructure(links, pageTitle, settings) {
     const linkScoutFolder = await findOrCreateFolder(parentId, rootFolderName);
 
     // Create folder with page title
-    const pageTitleFolder = await findOrCreateFolder(linkScoutFolder.id, pageTitle);
+    const newestFirst = settings.newestLinksFirst !== false; // Default to true
+    const pageTitleFolder = await findOrCreateFolder(linkScoutFolder.id, pageTitle, newestFirst ? 0 : undefined);
 
-    // Create bookmarks directly in page title folder
+    // Create bookmarks directly in page title folder (with duplicate detection)
+    const updateTitles = settings.updateExistingTitles || false;
     for (const link of links) {
       try {
-        await browser.bookmarks.create({
-          parentId: pageTitleFolder.id,
-          title: link,
-          url: link
-        });
-        successCount++;
+        const result = await createOrUpdateBookmark(
+          pageTitleFolder.id,
+          link,
+          link,
+          updateTitles,
+          newestFirst ? 0 : undefined
+        );
+        if (result.action === 'created') successCount++;
+        else if (result.action === 'skipped') skippedCount++;
+        else if (result.action === 'updated') updatedCount++;
       } catch (error) {
         failCount++;
       }
     }
 
     if (settings.showNotifications) {
-      const message = failCount > 0
-        ? `Salvos: ${successCount} | Falhas: ${failCount}`
-        : `${successCount} link${successCount !== 1 ? 's' : ''} salvo${successCount !== 1 ? 's' : ''} com sucesso!`;
+      let message = '';
+      const parts = [];
+      if (successCount > 0) parts.push(`${successCount} salvo${successCount !== 1 ? 's' : ''}`);
+      if (skippedCount > 0) parts.push(`${skippedCount} duplicado${skippedCount !== 1 ? 's' : ''}`);
+      if (updatedCount > 0) parts.push(`${updatedCount} atualizado${updatedCount !== 1 ? 's' : ''}`);
+      if (failCount > 0) parts.push(`${failCount} falha${failCount !== 1 ? 's' : ''}`);
+      message = parts.join(' | ');
 
       browser.notifications.create({
         type: 'basic',
         iconUrl: browser.runtime.getURL('icons/linkscout-48.svg'),
         title: 'LinkScout',
-        message: message
+        message: message || 'Nenhum link para salvar.'
       });
     }
 
-    return { successCount, failCount };
+    return { successCount, skippedCount, updatedCount, failCount };
 
   } catch (error) {
     if (settings.showNotifications) {
@@ -141,6 +189,8 @@ async function saveAllTabsAndClose() {
   }
 
   let successCount = 0;
+  let skippedCount = 0;
+  let updatedCount = 0;
   let failCount = 0;
   const tabsToClose = [];
 
@@ -170,21 +220,27 @@ async function saveAllTabsAndClose() {
     const date = now.toLocaleDateString('pt-BR');
     const time = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     const sessionName = `${weekday} ${date} ${time}`;
-    const sessionFolder = await findOrCreateFolder(linkScoutFolder.id, sessionName);
+    const newestFirst = settings.newestLinksFirst !== false; // Default to true
+    const sessionFolder = await findOrCreateFolder(linkScoutFolder.id, sessionName, newestFirst ? 0 : undefined);
 
-    // Create bookmarks directly in session folder (no domain subfolder)
+    // Create bookmarks directly in session folder (with duplicate detection)
+    const updateTitles = settings.updateExistingTitles || false;
     for (const tab of tabs) {
       if (!tab.url || tab.url.startsWith('about:') || tab.url.startsWith('moz-extension:')) {
         continue;
       }
 
       try {
-        await browser.bookmarks.create({
-          parentId: sessionFolder.id,
-          title: tab.title || tab.url,
-          url: tab.url
-        });
-        successCount++;
+        const result = await createOrUpdateBookmark(
+          sessionFolder.id,
+          tab.title || tab.url,
+          tab.url,
+          updateTitles,
+          newestFirst ? 0 : undefined
+        );
+        if (result.action === 'created') successCount++;
+        else if (result.action === 'skipped') skippedCount++;
+        else if (result.action === 'updated') updatedCount++;
         tabsToClose.push(tab.id);
       } catch (error) {
         failCount++;
@@ -199,9 +255,13 @@ async function saveAllTabsAndClose() {
     }
 
     if (settings.showNotifications) {
-      const message = failCount > 0
-        ? `Salvos e fechados: ${successCount} | Falhas: ${failCount}`
-        : `${successCount} aba${successCount !== 1 ? 's' : ''} salva${successCount !== 1 ? 's' : ''} e fechada${successCount !== 1 ? 's' : ''}!`;
+      const parts = [];
+      const savedClosed = successCount + skippedCount + updatedCount;
+      if (savedClosed > 0) parts.push(`${savedClosed} aba${savedClosed !== 1 ? 's' : ''} fechada${savedClosed !== 1 ? 's' : ''}`);
+      if (skippedCount > 0) parts.push(`${skippedCount} duplicada${skippedCount !== 1 ? 's' : ''}`);
+      if (updatedCount > 0) parts.push(`${updatedCount} atualizada${updatedCount !== 1 ? 's' : ''}`);
+      if (failCount > 0) parts.push(`${failCount} falha${failCount !== 1 ? 's' : ''}`);
+      const message = parts.join(' | ') || 'Nenhuma aba para salvar.';
 
       browser.notifications.create({
         type: 'basic',

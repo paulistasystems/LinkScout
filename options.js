@@ -4,7 +4,9 @@
 const DEFAULT_SETTINGS = {
     rootFolder: 'LinkScout',
     showNotifications: true,
-    bookmarkLocation: 'toolbar_____'
+    bookmarkLocation: 'toolbar_____',
+    updateExistingTitles: false,
+    newestLinksFirst: true
 };
 
 // Load saved settings
@@ -15,6 +17,8 @@ async function loadSettings() {
         document.getElementById('rootFolder').value = settings.rootFolder;
         document.getElementById('showNotifications').checked = settings.showNotifications;
         document.getElementById('bookmarkLocation').value = settings.bookmarkLocation;
+        document.getElementById('updateExistingTitles').checked = settings.updateExistingTitles;
+        document.getElementById('newestLinksFirst').checked = settings.newestLinksFirst;
 
         console.log('Settings loaded:', settings);
     } catch (error) {
@@ -28,7 +32,9 @@ async function saveSettings() {
     const settings = {
         rootFolder: document.getElementById('rootFolder').value.trim() || 'LinkScout',
         showNotifications: document.getElementById('showNotifications').checked,
-        bookmarkLocation: document.getElementById('bookmarkLocation').value
+        bookmarkLocation: document.getElementById('bookmarkLocation').value,
+        updateExistingTitles: document.getElementById('updateExistingTitles').checked,
+        newestLinksFirst: document.getElementById('newestLinksFirst').checked
     };
     try {
         await browser.storage.sync.set(settings);
