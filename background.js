@@ -1,5 +1,12 @@
 // LinkScout background.js
 
+// Open options page on install
+browser.runtime.onInstalled.addListener((details) => {
+  if (details.reason === 'install') {
+    browser.runtime.openOptionsPage();
+  }
+});
+
 // Default settings
 const DEFAULT_SETTINGS = {
   rootFolder: 'LinkScout',
@@ -35,6 +42,10 @@ async function findOrCreateFolder(parentId, title, index = undefined) {
     const existingFolder = children.find(child => child.title === title && !child.url);
 
     if (existingFolder) {
+      // Move existing folder to the specified index if provided
+      if (index !== undefined && existingFolder.index !== index) {
+        await browser.bookmarks.move(existingFolder.id, { parentId, index });
+      }
       return existingFolder;
     }
 
