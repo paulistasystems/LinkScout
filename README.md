@@ -41,7 +41,7 @@ LinkScout makes it easy to save and organize links from any webpage. Whether you
 
 1. **Clone or download the source code**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/paulistasystems/LinkScout.git
    cd LinkScout
    ```
 
