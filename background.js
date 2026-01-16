@@ -127,8 +127,7 @@ async function createBookmarkStructure(links, pageTitle, settings) {
           pageTitleFolder.id,
           link,
           link,
-          updateTitles,
-          newestFirst ? 0 : undefined
+          updateTitles
         );
         if (result.action === 'created') successCount++;
         else if (result.action === 'skipped') skippedCount++;
