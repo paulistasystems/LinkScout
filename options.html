@@ -303,12 +303,21 @@
             <div class="toggle-group">
                 <div class="toggle-info">
                     <div class="toggle-label">Links Recentes no Topo</div>
-                    <div class="toggle-description">Novos links são salvos no início da pasta (mais recentes em cima)</div>
+                    <div class="toggle-description">Novos links são salvos no início da pasta (mais recentes em cima)
+                    </div>
                 </div>
                 <label class="toggle-switch">
                     <input type="checkbox" id="newestLinksFirst">
                     <span class="slider"></span>
                 </label>
+            </div>
+
+            <div class="form-group" style="margin-top: 15px;">
+                <label for="linksPerFolder">Links por Pasta</label>
+                <input type="number" id="linksPerFolder" min="1" max="100" value="10"
+                    style="width: 100%; padding: 12px 15px; border: 2px solid #ddd; border-radius: 8px; font-size: 1em;">
+                <p class="hint">Quando houver mais links que este limite, serão criadas subpastas numeradas (ex: 1-10,
+                    11-20)</p>
             </div>
         </div>
 

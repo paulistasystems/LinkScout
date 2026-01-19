@@ -26,6 +26,7 @@ LinkScout makes it easy to save and organize links from any webpage. Whether you
 - 🔗 **Save Single Link** - Right-click on any link to save it directly
 - 📑 **Save & Close All Tabs** - Save all open tabs and close them (creates a session folder)
 - 📁 **Smart Organization** - Links saved under `LinkScout / [Page Title] / [Link]`
+- 📂 **Auto Subfolders** - When saving more than X links, automatically creates numbered subfolders (e.g., 1-10, 11-20)
 - 🔄 **Duplicate Detection** - Automatically detects and skips duplicate links in the same folder
 - ⬆️ **Newest First** - Option to show newest links/folders at the top (configurable)
 - ⚙️ **Configurable** - Choose bookmark location, folder name and more
@@ -121,6 +122,7 @@ Access the extension options to configure:
 - **Root Folder Name**: Default is "LinkScout"
 - **Update Existing Titles**: Update bookmark titles when duplicates are found
 - **Newest Links First**: Show newest links/folders at the top (enabled by default)
+- **Links per Folder**: Maximum links per folder before creating subfolders (default: 10). When changed, existing folders are automatically reorganized.
 
 ## License
 

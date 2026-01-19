@@ -12,7 +12,8 @@ const DEFAULT_SETTINGS = {
   rootFolder: 'LinkScout',
   bookmarkLocation: 'toolbar_____', // toolbar_____, menu________, unfiled_____
   updateExistingTitles: false, // Update title of existing bookmarks if URL matches
-  newestLinksFirst: true // New links appear at the top of the folder
+  newestLinksFirst: true, // New links appear at the top of the folder
+  linksPerFolder: 10 // Maximum links per folder before creating subfolders
 };
 
 function extractLinks(text) {
@@ -129,21 +130,57 @@ async function createBookmarkStructure(links, pageTitle, settings) {
     const newestFirst = settings.newestLinksFirst !== false; // Default to true
     const pageTitleFolder = await findOrCreateFolder(linkScoutFolder.id, pageTitle, newestFirst ? 0 : undefined);
 
-    // Create bookmarks directly in page title folder (with duplicate detection)
+    // Create bookmarks with subfolder logic
     const updateTitles = settings.updateExistingTitles || false;
-    for (const link of links) {
-      try {
-        const result = await createOrUpdateBookmark(
-          pageTitleFolder.id,
-          link,
-          link,
-          updateTitles
-        );
-        if (result.action === 'created') successCount++;
-        else if (result.action === 'skipped') skippedCount++;
-        else if (result.action === 'updated') updatedCount++;
-      } catch (error) {
-        failCount++;
+    const linksPerFolder = settings.linksPerFolder || 10;
+    const needsSubfolders = links.length > linksPerFolder;
+
+    if (needsSubfolders) {
+      // Split links into chunks and create subfolders
+      const chunks = [];
+      for (let i = 0; i < links.length; i += linksPerFolder) {
+        chunks.push(links.slice(i, i + linksPerFolder));
+      }
+
+      for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+        const chunk = chunks[chunkIndex];
+        const startNum = chunkIndex * linksPerFolder + 1;
+        const endNum = startNum + chunk.length - 1;
+        const folderName = `${startNum}-${endNum}`;
+        const subFolder = await findOrCreateFolder(pageTitleFolder.id, folderName);
+
+        for (const link of chunk) {
+          try {
+            const result = await createOrUpdateBookmark(
+              subFolder.id,
+              link,
+              link,
+              updateTitles
+            );
+            if (result.action === 'created') successCount++;
+            else if (result.action === 'skipped') skippedCount++;
+            else if (result.action === 'updated') updatedCount++;
+          } catch (error) {
+            failCount++;
+          }
+        }
+      }
+    } else {
+      // Create bookmarks directly in page title folder (with duplicate detection)
+      for (const link of links) {
+        try {
+          const result = await createOrUpdateBookmark(
+            pageTitleFolder.id,
+            link,
+            link,
+            updateTitles
+          );
+          if (result.action === 'created') successCount++;
+          else if (result.action === 'skipped') skippedCount++;
+          else if (result.action === 'updated') updatedCount++;
+        } catch (error) {
+          failCount++;
+        }
       }
     }
 
@@ -203,27 +240,66 @@ async function saveAllTabsAndClose() {
     const newestFirst = settings.newestLinksFirst !== false; // Default to true
     const sessionFolder = await findOrCreateFolder(linkScoutFolder.id, sessionName, newestFirst ? 0 : undefined);
 
-    // Create bookmarks directly in session folder (with duplicate detection)
+    // Create bookmarks with subfolder logic
     const updateTitles = settings.updateExistingTitles || false;
-    for (const tab of tabs) {
-      if (!tab.url || tab.url.startsWith('about:') || tab.url.startsWith('moz-extension:')) {
-        continue;
+    const linksPerFolder = settings.linksPerFolder || 10;
+
+    // Filter valid tabs first
+    const validTabs = tabs.filter(tab =>
+      tab.url && !tab.url.startsWith('about:') && !tab.url.startsWith('moz-extension:')
+    );
+    const needsSubfolders = validTabs.length > linksPerFolder;
+
+    if (needsSubfolders) {
+      // Split tabs into chunks and create subfolders
+      const chunks = [];
+      for (let i = 0; i < validTabs.length; i += linksPerFolder) {
+        chunks.push(validTabs.slice(i, i + linksPerFolder));
       }
 
-      try {
-        const result = await createOrUpdateBookmark(
-          sessionFolder.id,
-          tab.title || tab.url,
-          tab.url,
-          updateTitles,
-          newestFirst ? 0 : undefined
-        );
-        if (result.action === 'created') successCount++;
-        else if (result.action === 'skipped') skippedCount++;
-        else if (result.action === 'updated') updatedCount++;
-        tabsToClose.push(tab.id);
-      } catch (error) {
-        failCount++;
+      for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+        const chunk = chunks[chunkIndex];
+        const startNum = chunkIndex * linksPerFolder + 1;
+        const endNum = startNum + chunk.length - 1;
+        const folderName = `${startNum}-${endNum}`;
+        const subFolder = await findOrCreateFolder(sessionFolder.id, folderName);
+
+        for (const tab of chunk) {
+          try {
+            const result = await createOrUpdateBookmark(
+              subFolder.id,
+              tab.title || tab.url,
+              tab.url,
+              updateTitles,
+              newestFirst ? 0 : undefined
+            );
+            if (result.action === 'created') successCount++;
+            else if (result.action === 'skipped') skippedCount++;
+            else if (result.action === 'updated') updatedCount++;
+            tabsToClose.push(tab.id);
+          } catch (error) {
+            failCount++;
+          }
+        }
+      }
+    } else {
+      // Create bookmarks directly in session folder
+      for (const tab of validTabs) {
+        try {
+          const result = await createOrUpdateBookmark(
+            sessionFolder.id,
+            tab.title || tab.url,
+            tab.url,
+            updateTitles,
+            newestFirst ? 0 : undefined
+          );
+          if (result.action === 'created') successCount++;
+          else if (result.action === 'skipped') skippedCount++;
+          else if (result.action === 'updated') updatedCount++;
+          tabsToClose.push(tab.id);
+        } catch (error) {
+          failCount++;
+        }
       }
     }
 
@@ -240,6 +316,161 @@ async function saveAllTabsAndClose() {
     // Removed notification code - Firefox notifications are unreliable
   }
 }
+
+// Check if a folder name matches the numbered subfolder pattern (e.g., "1-10", "11-20")
+function isNumberedSubfolder(title) {
+  return /^\d+-\d+$/.test(title);
+}
+
+// Collect all bookmarks (links) from a folder, including from numbered subfolders
+async function collectAllBookmarks(folderId) {
+  const bookmarks = [];
+  const children = await browser.bookmarks.getChildren(folderId);
+
+  for (const child of children) {
+    if (child.url) {
+      // It's a bookmark
+      bookmarks.push({ title: child.title, url: child.url });
+    } else if (isNumberedSubfolder(child.title)) {
+      // It's a numbered subfolder, collect its bookmarks
+      const subChildren = await browser.bookmarks.getChildren(child.id);
+      for (const subChild of subChildren) {
+        if (subChild.url) {
+          bookmarks.push({ title: subChild.title, url: subChild.url });
+        }
+      }
+    }
+  }
+
+  return bookmarks;
+}
+
+// Remove numbered subfolders from a folder
+async function removeNumberedSubfolders(folderId) {
+  const children = await browser.bookmarks.getChildren(folderId);
+
+  for (const child of children) {
+    if (!child.url && isNumberedSubfolder(child.title)) {
+      await browser.bookmarks.removeTree(child.id);
+    }
+  }
+}
+
+// Remove direct bookmarks from a folder (keeping subfolders)
+async function removeDirectBookmarks(folderId) {
+  const children = await browser.bookmarks.getChildren(folderId);
+
+  for (const child of children) {
+    if (child.url) {
+      await browser.bookmarks.remove(child.id);
+    }
+  }
+}
+
+// Reorganize a single page folder based on linksPerFolder setting
+async function reorganizePageFolder(folderId, linksPerFolder) {
+  // Collect all bookmarks (from direct children and numbered subfolders)
+  const allBookmarks = await collectAllBookmarks(folderId);
+
+  if (allBookmarks.length === 0) return;
+
+  // Remove existing numbered subfolders
+  await removeNumberedSubfolders(folderId);
+
+  // Remove direct bookmarks
+  await removeDirectBookmarks(folderId);
+
+  // Recreate structure based on new setting
+  if (allBookmarks.length > linksPerFolder) {
+    // Create chunks and subfolders
+    const chunks = [];
+    for (let i = 0; i < allBookmarks.length; i += linksPerFolder) {
+      chunks.push(allBookmarks.slice(i, i + linksPerFolder));
+    }
+
+    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+      const chunk = chunks[chunkIndex];
+      const startNum = chunkIndex * linksPerFolder + 1;
+      const endNum = startNum + chunk.length - 1;
+      const folderName = `${startNum}-${endNum}`;
+      const subFolder = await findOrCreateFolder(folderId, folderName);
+
+      for (const bookmark of chunk) {
+        await browser.bookmarks.create({
+          parentId: subFolder.id,
+          title: bookmark.title,
+          url: bookmark.url
+        });
+      }
+    }
+  } else {
+    // Put all bookmarks directly in the folder
+    for (const bookmark of allBookmarks) {
+      await browser.bookmarks.create({
+        parentId: folderId,
+        title: bookmark.title,
+        url: bookmark.url
+      });
+    }
+  }
+}
+
+// Reorganize all folders inside LinkScout root folder
+async function reorganizeAllFolders(settings) {
+  try {
+    // Get bookmark location
+    let parentId = settings.bookmarkLocation || 'toolbar_____';
+
+    try {
+      await browser.bookmarks.getChildren(parentId);
+    } catch (locationError) {
+      parentId = "toolbar_____";
+      try {
+        await browser.bookmarks.getChildren(parentId);
+      } catch (toolbarError) {
+        parentId = "menu________";
+      }
+    }
+
+    // Find root folder
+    const rootFolderName = settings.rootFolder || 'LinkScout';
+    const children = await browser.bookmarks.getChildren(parentId);
+    const linkScoutFolder = children.find(child => child.title === rootFolderName && !child.url);
+
+    if (!linkScoutFolder) {
+      console.log('LinkScout folder not found, nothing to reorganize');
+      return { success: true, message: 'No folder to reorganize' };
+    }
+
+    // Get all page title folders inside LinkScout
+    const pageFolders = await browser.bookmarks.getChildren(linkScoutFolder.id);
+    const linksPerFolder = settings.linksPerFolder || 10;
+
+    let reorganizedCount = 0;
+    for (const folder of pageFolders) {
+      if (!folder.url) {
+        // It's a folder, reorganize it
+        await reorganizePageFolder(folder.id, linksPerFolder);
+        reorganizedCount++;
+      }
+    }
+
+    console.log(`Reorganized ${reorganizedCount} folders with ${linksPerFolder} links per folder`);
+    return { success: true, reorganizedCount };
+
+  } catch (error) {
+    console.error('Error reorganizing folders:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Listen for messages from options page
+browser.runtime.onMessage.addListener(async (message, sender) => {
+  if (message.action === 'reorganizeFolders') {
+    const result = await reorganizeAllFolders(message.settings);
+    return result;
+  }
+});
 
 // Function to create context menus
 async function createContextMenus() {
