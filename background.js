@@ -126,6 +126,11 @@ async function createBookmarkStructure(links, pageTitle, settings) {
     const rootFolderName = settings.rootFolder || 'LinkScout';
     const linkScoutFolder = await findOrCreateFolder(parentId, rootFolderName);
 
+    // Check if page title folder already exists
+    const existingChildren = await browser.bookmarks.getChildren(linkScoutFolder.id);
+    const existingFolder = existingChildren.find(child => child.title === pageTitle && !child.url);
+    const folderAlreadyExists = !!existingFolder;
+
     // Create folder with page title
     const newestFirst = settings.newestLinksFirst !== false; // Default to true
     const pageTitleFolder = await findOrCreateFolder(linkScoutFolder.id, pageTitle, newestFirst ? 0 : undefined);
@@ -133,26 +138,69 @@ async function createBookmarkStructure(links, pageTitle, settings) {
     // Create bookmarks with subfolder logic
     const updateTitles = settings.updateExistingTitles || false;
     const linksPerFolder = settings.linksPerFolder || 10;
-    const needsSubfolders = links.length > linksPerFolder;
 
-    if (needsSubfolders) {
-      // Split links into chunks and create subfolders
-      const chunks = [];
-      for (let i = 0; i < links.length; i += linksPerFolder) {
-        chunks.push(links.slice(i, i + linksPerFolder));
+    // If folder already exists, add links directly and then reorganize
+    if (folderAlreadyExists) {
+      // Add all new links directly to the folder (or to the last subfolder if subfolders exist)
+      for (const link of links) {
+        try {
+          const result = await createOrUpdateBookmark(
+            pageTitleFolder.id,
+            link,
+            link,
+            updateTitles,
+            newestFirst ? 0 : undefined
+          );
+          if (result.action === 'created') successCount++;
+          else if (result.action === 'skipped') skippedCount++;
+          else if (result.action === 'updated') updatedCount++;
+        } catch (error) {
+          failCount++;
+        }
       }
 
-      for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
-        const chunk = chunks[chunkIndex];
-        const startNum = chunkIndex * linksPerFolder + 1;
-        const endNum = startNum + chunk.length - 1;
-        const folderName = `${startNum}-${endNum}`;
-        const subFolder = await findOrCreateFolder(pageTitleFolder.id, folderName);
+      // Reorganize the folder to maintain proper subfolder structure
+      await reorganizePageFolder(pageTitleFolder.id, linksPerFolder);
+    } else {
+      // New folder - use the original logic
+      const needsSubfolders = links.length > linksPerFolder;
 
-        for (const link of chunk) {
+      if (needsSubfolders) {
+        // Split links into chunks and create subfolders
+        const chunks = [];
+        for (let i = 0; i < links.length; i += linksPerFolder) {
+          chunks.push(links.slice(i, i + linksPerFolder));
+        }
+
+        for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+          const chunk = chunks[chunkIndex];
+          const startNum = chunkIndex * linksPerFolder + 1;
+          const endNum = startNum + chunk.length - 1;
+          const folderName = `${startNum}-${endNum}`;
+          const subFolder = await findOrCreateFolder(pageTitleFolder.id, folderName);
+
+          for (const link of chunk) {
+            try {
+              const result = await createOrUpdateBookmark(
+                subFolder.id,
+                link,
+                link,
+                updateTitles
+              );
+              if (result.action === 'created') successCount++;
+              else if (result.action === 'skipped') skippedCount++;
+              else if (result.action === 'updated') updatedCount++;
+            } catch (error) {
+              failCount++;
+            }
+          }
+        }
+      } else {
+        // Create bookmarks directly in page title folder (with duplicate detection)
+        for (const link of links) {
           try {
             const result = await createOrUpdateBookmark(
-              subFolder.id,
+              pageTitleFolder.id,
               link,
               link,
               updateTitles
@@ -163,23 +211,6 @@ async function createBookmarkStructure(links, pageTitle, settings) {
           } catch (error) {
             failCount++;
           }
-        }
-      }
-    } else {
-      // Create bookmarks directly in page title folder (with duplicate detection)
-      for (const link of links) {
-        try {
-          const result = await createOrUpdateBookmark(
-            pageTitleFolder.id,
-            link,
-            link,
-            updateTitles
-          );
-          if (result.action === 'created') successCount++;
-          else if (result.action === 'skipped') skippedCount++;
-          else if (result.action === 'updated') updatedCount++;
-        } catch (error) {
-          failCount++;
         }
       }
     }
