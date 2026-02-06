@@ -6,7 +6,8 @@ const DEFAULT_SETTINGS = {
     bookmarkLocation: 'toolbar_____',
     updateExistingTitles: false,
     newestLinksFirst: true,
-    linksPerFolder: 10
+    linksPerFolder: 10,
+    removeDuplicates: false
 };
 
 // Load saved settings
@@ -19,6 +20,7 @@ async function loadSettings() {
         document.getElementById('updateExistingTitles').checked = settings.updateExistingTitles;
         document.getElementById('newestLinksFirst').checked = settings.newestLinksFirst;
         document.getElementById('linksPerFolder').value = settings.linksPerFolder;
+        document.getElementById('removeDuplicates').checked = settings.removeDuplicates;
 
         console.log('Settings loaded:', settings);
     } catch (error) {
@@ -35,7 +37,8 @@ async function saveSettings() {
         bookmarkLocation: document.getElementById('bookmarkLocation').value,
         updateExistingTitles: document.getElementById('updateExistingTitles').checked,
         newestLinksFirst: document.getElementById('newestLinksFirst').checked,
-        linksPerFolder: linksPerFolder > 0 ? linksPerFolder : 10
+        linksPerFolder: linksPerFolder > 0 ? linksPerFolder : 10,
+        removeDuplicates: document.getElementById('removeDuplicates').checked
     };
 
     try {

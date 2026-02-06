@@ -13,7 +13,8 @@ const DEFAULT_SETTINGS = {
   bookmarkLocation: 'toolbar_____', // toolbar_____, menu________, unfiled_____
   updateExistingTitles: false, // Update title of existing bookmarks if URL matches
   newestLinksFirst: true, // New links appear at the top of the folder
-  linksPerFolder: 10 // Maximum links per folder before creating subfolders
+  linksPerFolder: 10, // Maximum links per folder before creating subfolders
+  removeDuplicates: false // Remove duplicate links before saving
 };
 
 function extractLinks(text) {
@@ -94,9 +95,11 @@ async function createOrUpdateBookmark(parentId, title, url, updateTitleIfExists 
 }
 
 async function createBookmarkStructure(links, pageTitle, settings) {
-  // Remove duplicate links
-  const uniqueLinks = [...new Set(links)];
-  links = uniqueLinks;
+  // Remove duplicate links if enabled
+  if (settings.removeDuplicates) {
+    const uniqueLinks = [...new Set(links)];
+    links = uniqueLinks;
+  }
 
   let successCount = 0;
   let skippedCount = 0;
