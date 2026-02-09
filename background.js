@@ -13,9 +13,83 @@ const DEFAULT_SETTINGS = {
   bookmarkLocation: 'toolbar_____', // toolbar_____, menu________, unfiled_____
   updateExistingTitles: false, // Update title of existing bookmarks if URL matches
   newestLinksFirst: true, // New links appear at the top of the folder
-  linksPerFolder: 10, // Maximum links per folder before creating subfolders
-  removeDuplicates: false // Remove duplicate links before saving
+  linksPerFolder: 10 // Maximum links per folder before creating subfolders
 };
+
+// IndexedDB for global duplicate detection
+const DB_NAME = 'LinkScoutDB';
+const DB_VERSION = 1;
+const STORE_NAME = 'savedLinks';
+
+let dbInstance = null;
+
+// Initialize IndexedDB
+function openDatabase() {
+  return new Promise((resolve, reject) => {
+    if (dbInstance) {
+      resolve(dbInstance);
+      return;
+    }
+
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        // URL is the primary key - duplicates will be automatically rejected
+        db.createObjectStore(STORE_NAME, { keyPath: 'url' });
+      }
+    };
+
+    request.onsuccess = () => {
+      dbInstance = request.result;
+      resolve(dbInstance);
+    };
+
+    request.onerror = () => {
+      console.error('Failed to open IndexedDB:', request.error);
+      reject(request.error);
+    };
+  });
+}
+
+// Check if a link already exists in the database
+async function isLinkDuplicate(url) {
+  try {
+    const db = await openDatabase();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.get(url);
+
+      request.onsuccess = () => resolve(!!request.result);
+      request.onerror = () => resolve(false); // On error, assume not duplicate
+    });
+  } catch (error) {
+    console.error('Error checking duplicate:', error);
+    return false;
+  }
+}
+
+// Add a link to the database (returns false if duplicate)
+async function addLinkToDatabase(url) {
+  try {
+    const db = await openDatabase();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.add({ url, savedAt: Date.now() });
+
+      request.onsuccess = () => resolve(true); // Link added successfully
+      request.onerror = () => resolve(false); // Duplicate or error
+    });
+  } catch (error) {
+    console.error('Error adding link to database:', error);
+    return false;
+  }
+}
+
+
 
 function extractLinks(text) {
   const urlRegex = /(https?:\/\/[^\s]+)/g;
@@ -74,8 +148,14 @@ async function findExistingBookmark(parentId, url) {
   }
 }
 
-// Create or update bookmark, avoiding duplicates
+// Create or update bookmark, avoiding duplicates globally via IndexedDB
 async function createOrUpdateBookmark(parentId, title, url, updateTitleIfExists = false, index = undefined) {
+  // Check global duplicate via IndexedDB
+  const isGlobalDuplicate = await isLinkDuplicate(url);
+  if (isGlobalDuplicate) {
+    return { action: 'skipped', bookmark: null, reason: 'global_duplicate' };
+  }
+
   const existing = await findExistingBookmark(parentId, url);
 
   if (existing) {
@@ -91,16 +171,14 @@ async function createOrUpdateBookmark(parentId, title, url, updateTitleIfExists 
     createOptions.index = index;
   }
   const newBookmark = await browser.bookmarks.create(createOptions);
+
+  // Add to IndexedDB for global duplicate tracking
+  await addLinkToDatabase(url);
+
   return { action: 'created', bookmark: newBookmark };
 }
 
 async function createBookmarkStructure(links, pageTitle, settings) {
-  // Remove duplicate links if enabled
-  if (settings.removeDuplicates) {
-    const uniqueLinks = [...new Set(links)];
-    links = uniqueLinks;
-  }
-
   let successCount = 0;
   let skippedCount = 0;
   let updatedCount = 0;
