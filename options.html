@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="en">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LinkScout - Configurações</title>
+    <title>LinkScout - Settings</title>
     <style>
         * {
             margin: 0;
@@ -255,75 +255,39 @@
 <body>
     <div class="container">
         <h1>🔗 LinkScout</h1>
-        <p class="subtitle">Configure como seus links são organizados e salvos</p>
+        <p class="subtitle">Configure how your links are organized and saved</p>
 
         <div class="section">
-            <h2>📁 Organização</h2>
+            <h2>📁 Organization</h2>
             <div class="form-group">
-                <label for="bookmarkLocation">Onde Salvar os Favoritos</label>
+                <label for="bookmarkLocation">Where to Save Bookmarks</label>
                 <select id="bookmarkLocation">
-                    <option value="toolbar_____">Barra de Favoritos</option>
-                    <option value="menu________">Menu de Favoritos</option>
-                    <option value="unfiled_____">Outros Favoritos</option>
+                    <option value="toolbar_____">Bookmarks Toolbar</option>
+                    <option value="menu________">Bookmarks Menu</option>
+                    <option value="unfiled_____">Other Bookmarks</option>
                 </select>
-                <p class="hint">Escolha a localização principal onde a pasta raiz será criada</p>
+                <p class="hint">Choose the main location where the root folder will be created</p>
             </div>
             <div class="form-group">
-                <label for="rootFolder">Pasta Raiz dos Favoritos</label>
+                <label for="rootFolder">Root Bookmarks Folder</label>
                 <input type="text" id="rootFolder" placeholder="LinkScout">
-                <p class="hint">Nome da pasta principal onde os favoritos serão organizados</p>
+                <p class="hint">Name of the main folder where bookmarks will be organized</p>
             </div>
         </div>
 
         <div class="section">
-            <h2>⚙️ Funcionalidades</h2>
-
-            <div class="toggle-group">
-                <div class="toggle-info">
-                    <div class="toggle-label">Buscar Títulos Reais</div>
-                    <div class="toggle-description">Busca o título real de cada página (pode ser mais lento)</div>
-                </div>
-                <label class="toggle-switch">
-                    <input type="checkbox" id="fetchTitles">
-                    <span class="slider"></span>
-                </label>
-            </div>
-
-            <div class="toggle-group">
-                <div class="toggle-info">
-                    <div class="toggle-label">Atualizar Títulos Existentes</div>
-                    <div class="toggle-description">Atualiza o título de favoritos duplicados ao invés de ignorar</div>
-                </div>
-                <label class="toggle-switch">
-                    <input type="checkbox" id="updateExistingTitles">
-                    <span class="slider"></span>
-                </label>
-            </div>
-
-            <div class="toggle-group">
-                <div class="toggle-info">
-                    <div class="toggle-label">Links Recentes no Topo</div>
-                    <div class="toggle-description">Novos links são salvos no início da pasta (mais recentes em cima)
-                    </div>
-                </div>
-                <label class="toggle-switch">
-                    <input type="checkbox" id="newestLinksFirst">
-                    <span class="slider"></span>
-                </label>
-            </div>
-
-
+            <h2>⚙️ Features</h2>
 
             <div class="form-group" style="margin-top: 15px;">
-                <label for="linksPerFolder">Links por Pasta</label>
+                <label for="linksPerFolder">Links per Folder</label>
                 <input type="number" id="linksPerFolder" min="1" max="100" value="10"
                     style="width: 100%; padding: 12px 15px; border: 2px solid #ddd; border-radius: 8px; font-size: 1em;">
-                <p class="hint">Quando houver mais links que este limite, serão criadas subpastas numeradas (ex: 1-10,
-                    11-20)</p>
+                <p class="hint">When there are more links than this limit, numbered subfolders will be created (e.g.,
+                    1-10, 11-20)</p>
             </div>
         </div>
 
-        <button class="save-button" id="saveButton">💾 Salvar Configurações</button>
+        <button class="save-button" id="saveButton">💾 Save Settings</button>
         <div class="status-message" id="statusMessage"></div>
     </div>
 

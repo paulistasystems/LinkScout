@@ -1,6 +1,5 @@
 // LinkScout Sidebar Script
 
-const TRASH_FOLDER_NAME = '🗑️ Lixeira';
 const LINKSCOUT_FOLDER_NAME = 'LinkScout';
 
 // DOM Elements
@@ -22,17 +21,12 @@ document.addEventListener('DOMContentLoaded', () => {
     bookmarkTreeEl = document.getElementById('bookmarkTree');
     loadingStateEl = document.getElementById('loadingState');
     emptyStateEl = document.getElementById('emptyState');
-    trashCountEl = document.getElementById('trashCount');
-    trashContentEl = document.getElementById('trashContent');
-    emptyTrashBtn = document.getElementById('emptyTrashBtn');
     refreshBtn = document.getElementById('refreshBtn');
     collapseAllBtn = document.getElementById('collapseAllBtn');
     expandAllBtn = document.getElementById('expandAllBtn');
 
     // Event listeners
     refreshBtn.addEventListener('click', loadBookmarks);
-    emptyTrashBtn.addEventListener('click', emptyTrash);
-    document.querySelector('.trash-header').addEventListener('click', toggleTrashContent);
     collapseAllBtn.addEventListener('click', collapseAllFolders);
     expandAllBtn.addEventListener('click', expandAllFolders);
 
@@ -54,10 +48,8 @@ async function loadBookmarks() {
         }
 
         linkscoutFolderId = result.linkscoutFolderId;
-        trashFolderId = result.trashFolderId;
 
         renderBookmarkTree(result.bookmarks);
-        renderTrash(result.trash);
     } catch (error) {
         console.error('Error loading bookmarks:', error);
         showEmpty(true);
@@ -92,7 +84,7 @@ function renderBookmarkTree(items) {
     showEmpty(false);
 
     filteredItems.forEach(item => {
-        if (item.type === 'folder' && item.title !== TRASH_FOLDER_NAME) {
+        if (item.type === 'folder') {
             bookmarkTreeEl.appendChild(createFolderElement(item));
         } else if (item.type === 'bookmark') {
             bookmarkTreeEl.appendChild(createBookmarkElement(item));
@@ -150,8 +142,8 @@ function createFolderElement(folder) {
     actionsDiv.className = 'folder-actions';
     const openAllBtn = document.createElement('button');
     openAllBtn.className = 'folder-action-btn open-all-btn';
-    openAllBtn.title = 'Abrir tudo em abas';
-    openAllBtn.textContent = '🚀 Abrir tudo';
+    openAllBtn.title = 'Open all in tabs';
+    openAllBtn.textContent = '🚀 Open all';
     actionsDiv.appendChild(openAllBtn);
     headerEl.appendChild(actionsDiv);
 
@@ -173,7 +165,7 @@ function createFolderElement(folder) {
         contentEl.className = 'folder-content';
 
         folder.children.forEach(child => {
-            if (child.type === 'folder' && child.title !== TRASH_FOLDER_NAME) {
+            if (child.type === 'folder') {
                 contentEl.appendChild(createFolderElement(child));
             } else if (child.type === 'bookmark') {
                 contentEl.appendChild(createBookmarkElement(child));
@@ -277,39 +269,6 @@ async function openAllInFolder(folderId) {
     }
 }
 
-function renderTrash(trashItems) {
-    const count = trashItems ? trashItems.length : 0;
-    trashCountEl.textContent = count;
-    emptyTrashBtn.disabled = count === 0;
-
-    trashContentEl.innerHTML = '';
-
-    if (trashItems && trashItems.length > 0) {
-        trashItems.forEach(item => {
-            if (item.type === 'bookmark') {
-                trashContentEl.appendChild(createBookmarkElement(item));
-            }
-        });
-    }
-}
-
-function toggleTrashContent() {
-    const isVisible = trashContentEl.style.display !== 'none';
-    trashContentEl.style.display = isVisible ? 'none' : 'block';
-}
-
-async function emptyTrash() {
-    if (!confirm('Tem certeza que deseja esvaziar a lixeira? Esta ação não pode ser desfeita.')) {
-        return;
-    }
-
-    try {
-        await browser.runtime.sendMessage({ action: 'emptyTrash' });
-        loadBookmarks();
-    } catch (error) {
-        console.error('Error emptying trash:', error);
-    }
-}
 
 function escapeHtml(text) {
     const div = document.createElement('div');

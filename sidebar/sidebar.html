@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="en">
 
 <head>
     <meta charset="UTF-8">
-    <title>LinkScout - Favoritos</title>
+    <title>LinkScout - Bookmarks</title>
     <link rel="stylesheet" href="sidebar.css">
 </head>
 
@@ -12,36 +12,25 @@
         <header class="sidebar-header">
             <h1>🔗 LinkScout</h1>
             <div class="header-actions">
-                <button id="collapseAllBtn" class="icon-btn" title="Retrair tudo">➖</button>
-                <button id="expandAllBtn" class="icon-btn" title="Expandir tudo">➕</button>
-                <button id="refreshBtn" class="icon-btn" title="Atualizar">🔄</button>
+                <button id="collapseAllBtn" class="icon-btn" title="Collapse all">➖</button>
+                <button id="expandAllBtn" class="icon-btn" title="Expand all">➕</button>
+                <button id="refreshBtn" class="icon-btn" title="Refresh">🔄</button>
             </div>
         </header>
 
         <div class="sidebar-content">
             <div id="loadingState" class="state-message">
                 <span class="spinner"></span>
-                Carregando favoritos...
+                Loading bookmarks...
             </div>
 
             <div id="emptyState" class="state-message" style="display: none;">
-                📭 Nenhum favorito salvo ainda.
+                📭 No bookmarks saved yet.
             </div>
 
             <div id="bookmarkTree" class="bookmark-tree"></div>
         </div>
 
-        <div class="trash-section">
-            <div class="trash-header">
-                <span>🗑️ Lixeira</span>
-                <span id="trashCount" class="trash-count">0</span>
-            </div>
-            <div id="trashContent" class="trash-content" style="display: none;"></div>
-            <div class="trash-actions">
-                <button id="emptyTrashBtn" class="btn btn-danger" disabled>Esvaziar Lixeira</button>
-            </div>
-            <p class="trash-hint">Items são deletados automaticamente após 30 dias</p>
-        </div>
     </div>
 
     <script src="sidebar.js"></script>

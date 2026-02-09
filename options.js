@@ -4,8 +4,6 @@
 const DEFAULT_SETTINGS = {
     rootFolder: 'LinkScout',
     bookmarkLocation: 'toolbar_____',
-    updateExistingTitles: false,
-    newestLinksFirst: true,
     linksPerFolder: 10
 };
 
@@ -16,14 +14,12 @@ async function loadSettings() {
 
         document.getElementById('rootFolder').value = settings.rootFolder;
         document.getElementById('bookmarkLocation').value = settings.bookmarkLocation;
-        document.getElementById('updateExistingTitles').checked = settings.updateExistingTitles;
-        document.getElementById('newestLinksFirst').checked = settings.newestLinksFirst;
         document.getElementById('linksPerFolder').value = settings.linksPerFolder;
 
         console.log('Settings loaded:', settings);
     } catch (error) {
         console.error('Error loading settings:', error);
-        showStatus('Erro ao carregar configurações', 'error');
+        showStatus('Error loading settings', 'error');
     }
 }
 
@@ -33,8 +29,6 @@ async function saveSettings() {
     const newSettings = {
         rootFolder: document.getElementById('rootFolder').value.trim() || 'LinkScout',
         bookmarkLocation: document.getElementById('bookmarkLocation').value,
-        updateExistingTitles: document.getElementById('updateExistingTitles').checked,
-        newestLinksFirst: document.getElementById('newestLinksFirst').checked,
         linksPerFolder: linksPerFolder > 0 ? linksPerFolder : 10
     };
 
@@ -49,27 +43,27 @@ async function saveSettings() {
 
         // If linksPerFolder changed, reorganize existing folders
         if (linksPerFolderChanged) {
-            showStatus('⏳ Reorganizando pastas...', 'success');
+            showStatus('⏳ Reorganizing folders...', 'success');
             try {
                 const result = await browser.runtime.sendMessage({
                     action: 'reorganizeFolders',
                     settings: newSettings
                 });
                 if (result && result.success) {
-                    showStatus(`✓ Configurações salvas! ${result.reorganizedCount || 0} pastas reorganizadas.`, 'success');
+                    showStatus(`✓ Settings saved! ${result.reorganizedCount || 0} folders reorganized.`, 'success');
                 } else {
-                    showStatus('✓ Configurações salvas!', 'success');
+                    showStatus('✓ Settings saved!', 'success');
                 }
             } catch (reorgError) {
                 console.error('Error reorganizing folders:', reorgError);
-                showStatus('✓ Configurações salvas (reorganização falhou)', 'success');
+                showStatus('✓ Settings saved (reorganization failed)', 'success');
             }
         } else {
-            showStatus('✓ Configurações salvas com sucesso!', 'success');
+            showStatus('✓ Settings saved successfully!', 'success');
         }
     } catch (error) {
         console.error('Error saving settings:', error);
-        showStatus('✗ Erro ao salvar configurações', 'error');
+        showStatus('✗ Error saving settings', 'error');
     }
 }
 

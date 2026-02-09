@@ -55,11 +55,11 @@ LinkScout makes it easy to save and organize links from any webpage. Whether you
 
    Or manually create the zip:
    ```bash
-   zip -r linkscout-v1.1.zip manifest.json background.js content.js options.html options.js icons/ -x "*.DS_Store"
+   zip -r linkscout-2.4.zip manifest.json background.js content.js options.html options.js sidebar/ icons/ -x "*.DS_Store"
    ```
 
 3. **Output**
-   - The build creates `linkscout-v1.1.zip` in the project root directory.
+   - The build creates `linkscout-2.4.zip` in the project root directory.
 
 ### Project Structure
 
@@ -130,11 +130,12 @@ This extension is written in plain JavaScript with no external dependencies or b
 Access the extension options to configure:
 - **Bookmark Location**: Toolbar, Menu, or Other Bookmarks
 - **Root Folder Name**: Default is "LinkScout"
-- **Update Existing Titles**: Update bookmark titles when duplicates are found
-- **Newest Links First**: Show newest links/folders at the top (enabled by default)
 - **Links per Folder**: Maximum links per folder before creating subfolders (default: 10). When changed, existing folders are automatically reorganized.
 
-> **Note:** Duplicate detection is always active. Links are stored in an IndexedDB database, and any attempt to save a duplicate link is automatically skipped.
+> **Note:**
+> - Duplicate detection is always active. Links are stored in an IndexedDB database, and any attempt to save a duplicate link is automatically skipped.
+> - Newest links are always displayed at the top.
+> - Existing bookmark titles are preserved if a duplicate URL is encountered.
 
 ## License
 

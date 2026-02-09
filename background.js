@@ -11,8 +11,6 @@ browser.runtime.onInstalled.addListener((details) => {
 const DEFAULT_SETTINGS = {
   rootFolder: 'LinkScout',
   bookmarkLocation: 'toolbar_____', // toolbar_____, menu________, unfiled_____
-  updateExistingTitles: false, // Update title of existing bookmarks if URL matches
-  newestLinksFirst: true, // New links appear at the top of the folder
   linksPerFolder: 10 // Maximum links per folder before creating subfolders
 };
 
@@ -144,7 +142,7 @@ async function getLinksCountByFolder(folderId) {
 }
 
 // Get links from a folder, ordered by creation date
-async function getLinksByFolder(folderId, newestFirst = true) {
+async function getLinksByFolder(folderId) {
   try {
     const db = await openDatabase();
     return new Promise((resolve) => {
@@ -156,9 +154,7 @@ async function getLinksByFolder(folderId, newestFirst = true) {
       request.onsuccess = () => {
         let results = request.result || [];
         // Sort by createdAt
-        results.sort((a, b) => newestFirst
-          ? b.createdAt - a.createdAt
-          : a.createdAt - b.createdAt);
+        results.sort((a, b) => b.createdAt - a.createdAt);
         resolve(results);
       };
       request.onerror = () => resolve([]);
@@ -357,6 +353,9 @@ browser.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
       await removeLinksByFolderPathPrefix(folderPath);
     }
   }
+
+  // Update parent folder timestamp
+  await updateFolderTimestamp(removeInfo.parentId);
 });
 
 // Sync database on extension startup
@@ -423,7 +422,7 @@ async function findExistingBookmark(parentId, url) {
 }
 
 // Create or update bookmark, avoiding duplicates globally via IndexedDB
-async function createOrUpdateBookmark(parentId, title, url, updateTitleIfExists = false, index = undefined, folderPath = '') {
+async function createOrUpdateBookmark(parentId, title, url, index = undefined, folderPath = '') {
   // Check global duplicate via IndexedDB
   const isGlobalDuplicate = await isLinkDuplicate(url);
   if (isGlobalDuplicate) {
@@ -433,10 +432,6 @@ async function createOrUpdateBookmark(parentId, title, url, updateTitleIfExists 
   const existing = await findExistingBookmark(parentId, url);
 
   if (existing) {
-    if (updateTitleIfExists && existing.title !== title) {
-      await browser.bookmarks.update(existing.id, { title });
-      return { action: 'updated', bookmark: existing };
-    }
     return { action: 'skipped', bookmark: existing };
   }
 
@@ -448,6 +443,9 @@ async function createOrUpdateBookmark(parentId, title, url, updateTitleIfExists 
 
   // Add to IndexedDB for global duplicate tracking with full metadata
   await addLinkToDatabase(url, title, parentId, folderPath);
+
+  // Update folder timestamp
+  await updateFolderTimestamp(parentId);
 
   return { action: 'created', bookmark: newBookmark };
 }
@@ -487,11 +485,10 @@ async function createBookmarkStructure(links, pageTitle, settings) {
     const folderAlreadyExists = !!existingFolder;
 
     // Create folder with page title
-    const newestFirst = settings.newestLinksFirst !== false; // Default to true
-    const pageTitleFolder = await findOrCreateFolder(linkScoutFolder.id, pageTitle, newestFirst ? 0 : undefined);
+    const pageTitleFolder = await findOrCreateFolder(linkScoutFolder.id, pageTitle, 0);
 
     // Create bookmarks with subfolder logic
-    const updateTitles = settings.updateExistingTitles || false;
+
     const linksPerFolder = settings.linksPerFolder || 10;
 
     // If folder already exists, add links directly and then reorganize
@@ -504,8 +501,7 @@ async function createBookmarkStructure(links, pageTitle, settings) {
             pageTitleFolder.id,
             link,
             link,
-            updateTitles,
-            newestFirst ? 0 : undefined,
+            0,
             baseFolderPath
           );
           if (result.action === 'created') successCount++;
@@ -543,7 +539,6 @@ async function createBookmarkStructure(links, pageTitle, settings) {
                 subFolder.id,
                 link,
                 link,
-                updateTitles,
                 undefined,
                 subFolderPath
               );
@@ -564,7 +559,6 @@ async function createBookmarkStructure(links, pageTitle, settings) {
               pageTitleFolder.id,
               link,
               link,
-              updateTitles,
               undefined,
               directFolderPath
             );
@@ -626,16 +620,14 @@ async function saveAllTabsAndClose() {
 
     // Create a folder named after weekday, date, and time
     const now = new Date();
-    const weekdays = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+    const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const weekday = weekdays[now.getDay()];
-    const date = now.toLocaleDateString('pt-BR');
-    const time = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const date = now.toLocaleDateString('en-US');
+    const time = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     const sessionName = `${weekday} ${date} ${time}`;
-    const newestFirst = settings.newestLinksFirst !== false; // Default to true
-    const sessionFolder = await findOrCreateFolder(linkScoutFolder.id, sessionName, newestFirst ? 0 : undefined);
+    const sessionFolder = await findOrCreateFolder(linkScoutFolder.id, sessionName, 0);
 
     // Create bookmarks with subfolder logic
-    const updateTitles = settings.updateExistingTitles || false;
     const linksPerFolder = settings.linksPerFolder || 10;
 
     // Filter valid tabs first
@@ -665,8 +657,7 @@ async function saveAllTabsAndClose() {
               subFolder.id,
               tab.title || tab.url,
               tab.url,
-              updateTitles,
-              newestFirst ? 0 : undefined,
+              undefined,
               subFolderPath
             );
             if (result.action === 'created') successCount++;
@@ -687,8 +678,7 @@ async function saveAllTabsAndClose() {
             sessionFolder.id,
             tab.title || tab.url,
             tab.url,
-            updateTitles,
-            newestFirst ? 0 : undefined,
+            0,
             sessionFolderPath
           );
           if (result.action === 'created') successCount++;
@@ -863,62 +853,22 @@ async function reorganizeAllFolders(settings) {
 }
 
 // ============================================
-// TRASH MANAGEMENT & SIDEBAR FUNCTIONALITY
+// SIDEBAR FUNCTIONALITY
 // ============================================
 
-const TRASH_FOLDER_NAME = '🗑️ Lixeira';
-
-// Get or create trash folder inside LinkScout root
-async function getOrCreateTrashFolder() {
-  const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
-  let parentId = settings.bookmarkLocation || 'toolbar_____';
-
+// Update timestamp for a folder when its content changes
+async function updateFolderTimestamp(folderId) {
   try {
-    await browser.bookmarks.getChildren(parentId);
-  } catch (e) {
-    parentId = 'toolbar_____';
-  }
-
-  const children = await browser.bookmarks.getChildren(parentId);
-  const rootFolderName = settings.rootFolder || 'LinkScout';
-  let linkScoutFolder = children.find(child => child.title === rootFolderName && !child.url);
-
-  if (!linkScoutFolder) {
-    linkScoutFolder = await browser.bookmarks.create({ parentId, title: rootFolderName });
-  }
-
-  const lsChildren = await browser.bookmarks.getChildren(linkScoutFolder.id);
-  let trashFolder = lsChildren.find(child => child.title === TRASH_FOLDER_NAME && !child.url);
-
-  if (!trashFolder) {
-    trashFolder = await browser.bookmarks.create({ parentId: linkScoutFolder.id, title: TRASH_FOLDER_NAME });
-  }
-
-  return { linkScoutFolder, trashFolder };
-}
-
-// Move a bookmark to trash folder and record timestamp
-async function moveBookmarkToTrash(bookmarkId) {
-  try {
-    const { trashFolder } = await getOrCreateTrashFolder();
-
-    // Move bookmark to trash
-    await browser.bookmarks.move(bookmarkId, { parentId: trashFolder.id });
-
-    // Store timestamp for auto-cleanup
-    const timestamps = (await browser.storage.local.get('trashTimestamps')).trashTimestamps || {};
-    timestamps[bookmarkId] = Date.now();
-    await browser.storage.local.set({ trashTimestamps: timestamps });
-
-    return true;
+    const timestamps = (await browser.storage.local.get('folderTimestamps')).folderTimestamps || {};
+    timestamps[folderId] = Date.now();
+    await browser.storage.local.set({ folderTimestamps: timestamps });
   } catch (error) {
-    console.error('Error moving bookmark to trash:', error);
-    return false;
+    console.error('Error updating folder timestamp:', error);
   }
 }
 
-// Open a bookmark in new tab and move to trash
-async function openAndMoveToTrash(bookmarkId) {
+// Open a bookmark in new tab and remove it
+async function openAndRemove(bookmarkId) {
   try {
     const bookmarks = await browser.bookmarks.get(bookmarkId);
     if (bookmarks.length === 0 || !bookmarks[0].url) {
@@ -930,15 +880,19 @@ async function openAndMoveToTrash(bookmarkId) {
     // Open in new tab
     await browser.tabs.create({ url: bookmark.url, active: false });
 
-    // Move to trash
-    await moveBookmarkToTrash(bookmarkId);
+    // Remove the bookmark
+    await browser.bookmarks.remove(bookmarkId);
+
+    // Update parent folder timestamp (handled by onRemoved listener, but good to be explicit if needed)
+    // The onRemoved listener will handle the timestamp update.
 
     return { success: true };
   } catch (error) {
-    console.error('Error opening and trashing bookmark:', error);
+    console.error('Error opening and removing bookmark:', error);
     return { success: false, error: error.message };
   }
 }
+
 
 // Collect all bookmark IDs from a folder (recursive)
 async function collectBookmarkIds(folderId) {
@@ -957,14 +911,14 @@ async function collectBookmarkIds(folderId) {
   return ids;
 }
 
-// Open all bookmarks in a folder and move to trash
-async function openAllInFolderAndTrash(folderId) {
+// Open all bookmarks in a folder and remove
+async function openAllInFolderAndRemove(folderId) {
   try {
     const bookmarkIds = await collectBookmarkIds(folderId);
     let count = 0;
 
     for (const id of bookmarkIds) {
-      const result = await openAndMoveToTrash(id);
+      const result = await openAndRemove(id);
       if (result.success) count++;
     }
 
@@ -975,79 +929,7 @@ async function openAllInFolderAndTrash(folderId) {
   }
 }
 
-// Empty trash folder completely
-async function emptyTrash() {
-  try {
-    const { trashFolder } = await getOrCreateTrashFolder();
-    const children = await browser.bookmarks.getChildren(trashFolder.id);
-
-    for (const child of children) {
-      if (child.url) {
-        await browser.bookmarks.remove(child.id);
-      } else {
-        await browser.bookmarks.removeTree(child.id);
-      }
-    }
-
-    // Clear timestamps
-    await browser.storage.local.set({ trashTimestamps: {} });
-
-    return { success: true };
-  } catch (error) {
-    console.error('Error emptying trash:', error);
-    return { success: false, error: error.message };
-  }
-}
-
-// Cleanup items older than 30 days from trash
-async function cleanupOldTrashItems() {
-  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-  const now = Date.now();
-
-  try {
-    const { trashFolder } = await getOrCreateTrashFolder();
-    const children = await browser.bookmarks.getChildren(trashFolder.id);
-    const timestamps = (await browser.storage.local.get('trashTimestamps')).trashTimestamps || {};
-
-    let cleanedCount = 0;
-    const newTimestamps = { ...timestamps };
-
-    for (const child of children) {
-      const trashedAt = timestamps[child.id];
-
-      // If no timestamp, set one now (for existing items before this feature)
-      if (!trashedAt) {
-        newTimestamps[child.id] = now;
-        continue;
-      }
-
-      // If older than 30 days, delete
-      if (now - trashedAt > THIRTY_DAYS_MS) {
-        try {
-          if (child.url) {
-            await browser.bookmarks.remove(child.id);
-          } else {
-            await browser.bookmarks.removeTree(child.id);
-          }
-          delete newTimestamps[child.id];
-          cleanedCount++;
-        } catch (e) {
-          console.error('Error removing old trash item:', e);
-        }
-      }
-    }
-
-    await browser.storage.local.set({ trashTimestamps: newTimestamps });
-    console.log(`Trash cleanup: removed ${cleanedCount} items older than 30 days`);
-
-    return { success: true, cleanedCount };
-  } catch (error) {
-    console.error('Error during trash cleanup:', error);
-    return { success: false, error: error.message };
-  }
-}
-
-// Build bookmark tree for sidebar (excluding trash)
+// Build bookmark tree for sidebar (sorted by last modified)
 async function getBookmarkTreeForSidebar() {
   try {
     const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
@@ -1064,10 +946,11 @@ async function getBookmarkTreeForSidebar() {
     const linkScoutFolder = children.find(child => child.title === rootFolderName && !child.url);
 
     if (!linkScoutFolder) {
-      return { bookmarks: [], trash: [], linkscoutFolderId: null, trashFolderId: null };
+      return { bookmarks: [], linkscoutFolderId: null };
     }
 
-    const { trashFolder } = await getOrCreateTrashFolder();
+    // Get folder timestamps
+    const timestamps = (await browser.storage.local.get('folderTimestamps')).folderTimestamps || {};
 
     // Build tree recursively
     async function buildTree(folderId) {
@@ -1075,8 +958,6 @@ async function getBookmarkTreeForSidebar() {
       const children = await browser.bookmarks.getChildren(folderId);
 
       for (const child of children) {
-        if (child.title === TRASH_FOLDER_NAME) continue;
-
         if (child.url) {
           items.push({
             id: child.id,
@@ -1090,30 +971,45 @@ async function getBookmarkTreeForSidebar() {
             id: child.id,
             title: child.title,
             type: 'folder',
-            children: subItems
+            children: subItems,
+            updatedAt: timestamps[child.id] || 0 // Default to 0 if not set
           });
         }
       }
+
+      // Sort items: Folders first (by modified date), then bookmarks
+      // Or just mix them and sort by specific logic? The request implies folders.
+      // "na sidebar, altere para que a ultima pasta lida [...] seja ordenada no inicio"
+      // User likely wants folders sorted by activity.
+
+      items.sort((a, b) => {
+        // If one is folder and other is bookmark, prioritize folder? 
+        // Or just sort folders by date and leave bookmarks as is/by date?
+        // Let's sort everything by "modified" if applicable, but bookmarks don't have explicit modified tracking here easily unless we add it.
+        // For now, let's sort folders amongst themselves at the top.
+
+        const aIsFolder = a.type === 'folder';
+        const bIsFolder = b.type === 'folder';
+
+        if (aIsFolder && bIsFolder) {
+          return (b.updatedAt || 0) - (a.updatedAt || 0);
+        }
+
+        // Keep folders on top
+        // if (aIsFolder && !bIsFolder) return -1;
+        // if (!aIsFolder && bIsFolder) return 1;
+
+        return 0; // Keep original order for bookmarks
+      });
 
       return items;
     }
 
     const bookmarks = await buildTree(linkScoutFolder.id);
 
-    // Get trash items
-    const trashChildren = await browser.bookmarks.getChildren(trashFolder.id);
-    const trash = trashChildren.map(child => ({
-      id: child.id,
-      title: child.title,
-      url: child.url,
-      type: child.url ? 'bookmark' : 'folder'
-    }));
-
     return {
       bookmarks,
-      trash,
-      linkscoutFolderId: linkScoutFolder.id,
-      trashFolderId: trashFolder.id
+      linkscoutFolderId: linkScoutFolder.id
     };
   } catch (error) {
     console.error('Error getting bookmark tree:', error);
@@ -1121,17 +1017,17 @@ async function getBookmarkTreeForSidebar() {
   }
 }
 
-// Setup alarm for daily trash cleanup
-browser.alarms.create('cleanup-trash', { periodInMinutes: 1440 }); // 24 hours
+// Setup alarm for daily trash cleanup - REMOVED
+// browser.alarms.create('cleanup-trash', { periodInMinutes: 1440 }); // 24 hours
 
-browser.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'cleanup-trash') {
-    cleanupOldTrashItems();
-  }
-});
+// browser.alarms.onAlarm.addListener((alarm) => {
+//   if (alarm.name === 'cleanup-trash') {
+//     cleanupOldTrashItems();
+//   }
+// });
 
-// Run cleanup on startup
-cleanupOldTrashItems();
+// Run cleanup on startup - REMOVED
+// cleanupOldTrashItems();
 
 // Listen for messages from options page and sidebar
 browser.runtime.onMessage.addListener(async (message, sender) => {
@@ -1146,15 +1042,11 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
   }
 
   if (message.action === 'openAndTrash') {
-    return await openAndMoveToTrash(message.bookmarkId);
+    return await openAndRemove(message.bookmarkId);
   }
 
   if (message.action === 'openAllInFolder') {
-    return await openAllInFolderAndTrash(message.folderId);
-  }
-
-  if (message.action === 'emptyTrash') {
-    return await emptyTrash();
+    return await openAllInFolderAndRemove(message.folderId);
   }
 });
 
