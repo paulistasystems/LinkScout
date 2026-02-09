@@ -119,15 +119,35 @@ function createFolderElement(folder) {
 
     const headerEl = document.createElement('div');
     headerEl.className = 'folder-header';
-    headerEl.innerHTML = `
-        <span class="folder-toggle">▼</span>
-        <span class="folder-icon">📁</span>
-        <span class="folder-name">${escapeHtml(folder.title)}</span>
-        <span class="folder-count">${bookmarkCount}</span>
-        <div class="folder-actions">
-            <button class="folder-action-btn open-all-btn" title="Abrir tudo em abas">🚀 Abrir tudo</button>
-        </div>
-    `;
+
+    const toggleSpan = document.createElement('span');
+    toggleSpan.className = 'folder-toggle';
+    toggleSpan.textContent = '▼';
+    headerEl.appendChild(toggleSpan);
+
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'folder-icon';
+    iconSpan.textContent = '📁';
+    headerEl.appendChild(iconSpan);
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'folder-name';
+    nameSpan.textContent = folder.title;
+    headerEl.appendChild(nameSpan);
+
+    const countSpan = document.createElement('span');
+    countSpan.className = 'folder-count';
+    countSpan.textContent = bookmarkCount;
+    headerEl.appendChild(countSpan);
+
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'folder-actions';
+    const openAllBtn = document.createElement('button');
+    openAllBtn.className = 'folder-action-btn open-all-btn';
+    openAllBtn.title = 'Abrir tudo em abas';
+    openAllBtn.textContent = '🚀 Abrir tudo';
+    actionsDiv.appendChild(openAllBtn);
+    headerEl.appendChild(actionsDiv);
 
     headerEl.addEventListener('click', (e) => {
         if (!e.target.closest('.folder-action-btn')) {
@@ -135,7 +155,6 @@ function createFolderElement(folder) {
         }
     });
 
-    const openAllBtn = headerEl.querySelector('.open-all-btn');
     openAllBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         openAllInFolder(folder.id);
@@ -170,13 +189,32 @@ function createBookmarkElement(bookmark) {
     // Get favicon
     const faviconUrl = getFaviconUrl(bookmark.url);
 
-    itemEl.innerHTML = `
-        ${faviconUrl
-            ? `<img class="bookmark-favicon" src="${faviconUrl}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="bookmark-favicon-placeholder" style="display:none">🔗</div>`
-            : `<div class="bookmark-favicon-placeholder">🔗</div>`
-        }
-        <span class="bookmark-title" title="${escapeHtml(bookmark.url)}">${escapeHtml(bookmark.title || bookmark.url)}</span>
-    `;
+    if (faviconUrl) {
+        const favicon = document.createElement('img');
+        favicon.className = 'bookmark-favicon';
+        favicon.src = faviconUrl;
+        const placeholder = document.createElement('div');
+        placeholder.className = 'bookmark-favicon-placeholder';
+        placeholder.style.display = 'none';
+        placeholder.textContent = '🔗';
+        favicon.onerror = function () {
+            this.style.display = 'none';
+            placeholder.style.display = 'flex';
+        };
+        itemEl.appendChild(favicon);
+        itemEl.appendChild(placeholder);
+    } else {
+        const placeholder = document.createElement('div');
+        placeholder.className = 'bookmark-favicon-placeholder';
+        placeholder.textContent = '🔗';
+        itemEl.appendChild(placeholder);
+    }
+
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'bookmark-title';
+    titleSpan.title = bookmark.url;
+    titleSpan.textContent = bookmark.title || bookmark.url;
+    itemEl.appendChild(titleSpan);
 
     itemEl.addEventListener('click', () => openAndTrash(bookmark.id));
 
