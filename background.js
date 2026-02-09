@@ -196,6 +196,174 @@ async function removeLinkFromDatabase(url) {
   }
 }
 
+// Recursively collect all bookmarks from a folder and its subfolders
+async function collectBookmarksFromFolder(folderId, folderPath = '') {
+  const bookmarks = [];
+  try {
+    const children = await browser.bookmarks.getChildren(folderId);
+    for (const child of children) {
+      if (child.url) {
+        // It's a bookmark
+        bookmarks.push({
+          url: child.url,
+          title: child.title,
+          folderId: folderId,
+          folderPath: folderPath
+        });
+      } else {
+        // It's a folder, recurse into it
+        const subFolderPath = folderPath ? `${folderPath}/${child.title}` : child.title;
+        const subBookmarks = await collectBookmarksFromFolder(child.id, subFolderPath);
+        bookmarks.push(...subBookmarks);
+      }
+    }
+  } catch (error) {
+    console.error('Error collecting bookmarks from folder:', error);
+  }
+  return bookmarks;
+}
+
+// Sync IndexedDB with existing bookmarks in LinkScout folder
+async function syncDatabaseWithBookmarks() {
+  try {
+    const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
+    let parentId = settings.bookmarkLocation || 'toolbar_____';
+
+    // Find the root folder
+    try {
+      await browser.bookmarks.getChildren(parentId);
+    } catch (e) {
+      parentId = 'toolbar_____';
+    }
+
+    const children = await browser.bookmarks.getChildren(parentId);
+    const rootFolderName = settings.rootFolder || 'LinkScout';
+    const linkScoutFolder = children.find(child => child.title === rootFolderName && !child.url);
+
+    if (!linkScoutFolder) {
+      console.log('LinkScout folder not found, nothing to sync');
+      return { synced: 0, skipped: 0 };
+    }
+
+    // Collect all bookmarks from LinkScout folder
+    const allBookmarks = await collectBookmarksFromFolder(linkScoutFolder.id, rootFolderName);
+
+    let synced = 0;
+    let skipped = 0;
+
+    for (const bookmark of allBookmarks) {
+      const added = await addLinkToDatabase(bookmark.url, bookmark.title, bookmark.folderId, bookmark.folderPath);
+      if (added) {
+        synced++;
+      } else {
+        skipped++; // Already exists
+      }
+    }
+
+    console.log(`Sync complete: ${synced} added, ${skipped} already existed`);
+    return { synced, skipped };
+  } catch (error) {
+    console.error('Error syncing database with bookmarks:', error);
+    return { synced: 0, skipped: 0, error: error.message };
+  }
+}
+
+// Remove all links that have a folderPath starting with the given prefix
+async function removeLinksByFolderPathPrefix(folderPathPrefix) {
+  try {
+    const db = await openDatabase();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.openCursor();
+      let removedCount = 0;
+
+      request.onsuccess = (event) => {
+        const cursor = event.target.result;
+        if (cursor) {
+          const record = cursor.value;
+          // Check if folderPath starts with the prefix or equals the prefix
+          if (record.folderPath && (record.folderPath === folderPathPrefix || record.folderPath.startsWith(folderPathPrefix + '/'))) {
+            cursor.delete();
+            removedCount++;
+          }
+          cursor.continue();
+        } else {
+          console.log(`Removed ${removedCount} links with folderPath prefix: ${folderPathPrefix}`);
+          resolve(removedCount);
+        }
+      };
+      request.onerror = () => resolve(0);
+    });
+  } catch (error) {
+    console.error('Error removing links by folder path:', error);
+    return 0;
+  }
+}
+
+// Build folder path from bookmark node and its parents
+async function buildFolderPathFromNode(removeInfo) {
+  // We need to build the path from the parent chain
+  // removeInfo.parentId gives us the parent folder ID
+  try {
+    const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
+    const rootFolderName = settings.rootFolder || 'LinkScout';
+
+    // Get the path by walking up the parent chain
+    let path = removeInfo.node.title;
+    let currentParentId = removeInfo.parentId;
+
+    while (currentParentId) {
+      try {
+        const parents = await browser.bookmarks.get(currentParentId);
+        if (parents && parents[0]) {
+          const parent = parents[0];
+          if (parent.title === rootFolderName) {
+            path = rootFolderName + '/' + path;
+            break;
+          }
+          path = parent.title + '/' + path;
+          currentParentId = parent.parentId;
+        } else {
+          break;
+        }
+      } catch (e) {
+        break;
+      }
+    }
+
+    return path;
+  } catch (error) {
+    console.error('Error building folder path:', error);
+    return null;
+  }
+}
+
+// Listen for bookmark deletions and remove from IndexedDB
+browser.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
+  // removeInfo.node contains the removed bookmark/folder
+  const node = removeInfo.node;
+
+  if (node.url) {
+    // Single bookmark deleted
+    const removed = await removeLinkFromDatabase(node.url);
+    if (removed) {
+      console.log('Removed from IndexedDB:', node.url);
+    }
+  } else {
+    // Folder deleted - remove all bookmarks by folder path
+    const folderPath = await buildFolderPathFromNode(removeInfo);
+    if (folderPath) {
+      await removeLinksByFolderPathPrefix(folderPath);
+    }
+  }
+});
+
+// Sync database on extension startup
+syncDatabaseWithBookmarks().then(result => {
+  console.log('Initial sync result:', result);
+});
+
 
 function extractLinks(text) {
   const urlRegex = /(https?:\/\/[^\s]+)/g;
