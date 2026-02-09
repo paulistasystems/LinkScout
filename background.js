@@ -16,14 +16,19 @@ const DEFAULT_SETTINGS = {
   linksPerFolder: 10 // Maximum links per folder before creating subfolders
 };
 
-// IndexedDB for global duplicate detection
+// IndexedDB for bookmark management
 const DB_NAME = 'LinkScoutDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Upgraded for new schema
 const STORE_NAME = 'savedLinks';
 
 let dbInstance = null;
 
-// Initialize IndexedDB
+// Generate unique ID
+function generateId() {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+}
+
+// Initialize IndexedDB with new schema
 function openDatabase() {
   return new Promise((resolve, reject) => {
     if (dbInstance) {
@@ -35,9 +40,29 @@ function openDatabase() {
 
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        // URL is the primary key - duplicates will be automatically rejected
-        db.createObjectStore(STORE_NAME, { keyPath: 'url' });
+      const oldVersion = event.oldVersion;
+
+      // Migration from v1 or fresh install
+      if (oldVersion < 2) {
+        // Delete old store if exists for clean migration
+        if (db.objectStoreNames.contains(STORE_NAME)) {
+          db.deleteObjectStore(STORE_NAME);
+        }
+
+        // Create new store with id as keyPath
+        const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+
+        // Unique index on URL - ensures global uniqueness
+        store.createIndex('url', 'url', { unique: true });
+
+        // Index for counting links by folder
+        store.createIndex('folderId', 'folderId', { unique: false });
+
+        // Index for ordering by creation date
+        store.createIndex('createdAt', 'createdAt', { unique: false });
+
+        // Compound index for folder + date ordering
+        store.createIndex('folderPath_createdAt', ['folderPath', 'createdAt'], { unique: false });
       }
     };
 
@@ -53,17 +78,18 @@ function openDatabase() {
   });
 }
 
-// Check if a link already exists in the database
+// Check if a link already exists in the database (uses url index)
 async function isLinkDuplicate(url) {
   try {
     const db = await openDatabase();
     return new Promise((resolve) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const store = tx.objectStore(STORE_NAME);
-      const request = store.get(url);
+      const index = store.index('url');
+      const request = index.get(url);
 
       request.onsuccess = () => resolve(!!request.result);
-      request.onerror = () => resolve(false); // On error, assume not duplicate
+      request.onerror = () => resolve(false);
     });
   } catch (error) {
     console.error('Error checking duplicate:', error);
@@ -71,17 +97,26 @@ async function isLinkDuplicate(url) {
   }
 }
 
-// Add a link to the database (returns false if duplicate)
-async function addLinkToDatabase(url) {
+// Add a link to the database with full metadata (returns false if duplicate)
+async function addLinkToDatabase(url, title = '', folderId = '', folderPath = '') {
   try {
     const db = await openDatabase();
     return new Promise((resolve) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
-      const request = store.add({ url, savedAt: Date.now() });
+      const record = {
+        id: generateId(),
+        url,
+        title,
+        folderId,
+        folderPath,
+        createdAt: Date.now(),
+        order: 0
+      };
+      const request = store.add(record);
 
-      request.onsuccess = () => resolve(true); // Link added successfully
-      request.onerror = () => resolve(false); // Duplicate or error
+      request.onsuccess = () => resolve(true);
+      request.onerror = () => resolve(false); // Duplicate URL (unique constraint)
     });
   } catch (error) {
     console.error('Error adding link to database:', error);
@@ -89,6 +124,77 @@ async function addLinkToDatabase(url) {
   }
 }
 
+// Count links in a specific folder
+async function getLinksCountByFolder(folderId) {
+  try {
+    const db = await openDatabase();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const index = store.index('folderId');
+      const request = index.count(folderId);
+
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(0);
+    });
+  } catch (error) {
+    console.error('Error counting links:', error);
+    return 0;
+  }
+}
+
+// Get links from a folder, ordered by creation date
+async function getLinksByFolder(folderId, newestFirst = true) {
+  try {
+    const db = await openDatabase();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const index = store.index('folderId');
+      const request = index.getAll(folderId);
+
+      request.onsuccess = () => {
+        let results = request.result || [];
+        // Sort by createdAt
+        results.sort((a, b) => newestFirst
+          ? b.createdAt - a.createdAt
+          : a.createdAt - b.createdAt);
+        resolve(results);
+      };
+      request.onerror = () => resolve([]);
+    });
+  } catch (error) {
+    console.error('Error getting links:', error);
+    return [];
+  }
+}
+
+// Remove a link from the database by URL
+async function removeLinkFromDatabase(url) {
+  try {
+    const db = await openDatabase();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const index = store.index('url');
+      const getRequest = index.get(url);
+
+      getRequest.onsuccess = () => {
+        if (getRequest.result) {
+          const deleteRequest = store.delete(getRequest.result.id);
+          deleteRequest.onsuccess = () => resolve(true);
+          deleteRequest.onerror = () => resolve(false);
+        } else {
+          resolve(false);
+        }
+      };
+      getRequest.onerror = () => resolve(false);
+    });
+  } catch (error) {
+    console.error('Error removing link:', error);
+    return false;
+  }
+}
 
 
 function extractLinks(text) {
@@ -149,7 +255,7 @@ async function findExistingBookmark(parentId, url) {
 }
 
 // Create or update bookmark, avoiding duplicates globally via IndexedDB
-async function createOrUpdateBookmark(parentId, title, url, updateTitleIfExists = false, index = undefined) {
+async function createOrUpdateBookmark(parentId, title, url, updateTitleIfExists = false, index = undefined, folderPath = '') {
   // Check global duplicate via IndexedDB
   const isGlobalDuplicate = await isLinkDuplicate(url);
   if (isGlobalDuplicate) {
@@ -172,8 +278,8 @@ async function createOrUpdateBookmark(parentId, title, url, updateTitleIfExists 
   }
   const newBookmark = await browser.bookmarks.create(createOptions);
 
-  // Add to IndexedDB for global duplicate tracking
-  await addLinkToDatabase(url);
+  // Add to IndexedDB for global duplicate tracking with full metadata
+  await addLinkToDatabase(url, title, parentId, folderPath);
 
   return { action: 'created', bookmark: newBookmark };
 }
@@ -223,6 +329,7 @@ async function createBookmarkStructure(links, pageTitle, settings) {
     // If folder already exists, add links directly and then reorganize
     if (folderAlreadyExists) {
       // Add all new links directly to the folder (or to the last subfolder if subfolders exist)
+      const baseFolderPath = `${rootFolderName}/${pageTitle}`;
       for (const link of links) {
         try {
           const result = await createOrUpdateBookmark(
@@ -230,7 +337,8 @@ async function createBookmarkStructure(links, pageTitle, settings) {
             link,
             link,
             updateTitles,
-            newestFirst ? 0 : undefined
+            newestFirst ? 0 : undefined,
+            baseFolderPath
           );
           if (result.action === 'created') successCount++;
           else if (result.action === 'skipped') skippedCount++;
@@ -260,13 +368,16 @@ async function createBookmarkStructure(links, pageTitle, settings) {
           const folderName = `${startNum}-${endNum}`;
           const subFolder = await findOrCreateFolder(pageTitleFolder.id, folderName);
 
+          const subFolderPath = `${rootFolderName}/${pageTitle}/${folderName}`;
           for (const link of chunk) {
             try {
               const result = await createOrUpdateBookmark(
                 subFolder.id,
                 link,
                 link,
-                updateTitles
+                updateTitles,
+                undefined,
+                subFolderPath
               );
               if (result.action === 'created') successCount++;
               else if (result.action === 'skipped') skippedCount++;
@@ -278,13 +389,16 @@ async function createBookmarkStructure(links, pageTitle, settings) {
         }
       } else {
         // Create bookmarks directly in page title folder (with duplicate detection)
+        const directFolderPath = `${rootFolderName}/${pageTitle}`;
         for (const link of links) {
           try {
             const result = await createOrUpdateBookmark(
               pageTitleFolder.id,
               link,
               link,
-              updateTitles
+              updateTitles,
+              undefined,
+              directFolderPath
             );
             if (result.action === 'created') successCount++;
             else if (result.action === 'skipped') skippedCount++;
@@ -376,6 +490,7 @@ async function saveAllTabsAndClose() {
         const folderName = `${startNum}-${endNum}`;
         const subFolder = await findOrCreateFolder(sessionFolder.id, folderName);
 
+        const subFolderPath = `${rootFolderName}/${sessionName}/${folderName}`;
         for (const tab of chunk) {
           try {
             const result = await createOrUpdateBookmark(
@@ -383,7 +498,8 @@ async function saveAllTabsAndClose() {
               tab.title || tab.url,
               tab.url,
               updateTitles,
-              newestFirst ? 0 : undefined
+              newestFirst ? 0 : undefined,
+              subFolderPath
             );
             if (result.action === 'created') successCount++;
             else if (result.action === 'skipped') skippedCount++;
@@ -396,6 +512,7 @@ async function saveAllTabsAndClose() {
       }
     } else {
       // Create bookmarks directly in session folder
+      const sessionFolderPath = `${rootFolderName}/${sessionName}`;
       for (const tab of validTabs) {
         try {
           const result = await createOrUpdateBookmark(
@@ -403,7 +520,8 @@ async function saveAllTabsAndClose() {
             tab.title || tab.url,
             tab.url,
             updateTitles,
-            newestFirst ? 0 : undefined
+            newestFirst ? 0 : undefined,
+            sessionFolderPath
           );
           if (result.action === 'created') successCount++;
           else if (result.action === 'skipped') skippedCount++;
