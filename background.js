@@ -862,11 +862,299 @@ async function reorganizeAllFolders(settings) {
   }
 }
 
-// Listen for messages from options page
+// ============================================
+// TRASH MANAGEMENT & SIDEBAR FUNCTIONALITY
+// ============================================
+
+const TRASH_FOLDER_NAME = '🗑️ Lixeira';
+
+// Get or create trash folder inside LinkScout root
+async function getOrCreateTrashFolder() {
+  const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
+  let parentId = settings.bookmarkLocation || 'toolbar_____';
+
+  try {
+    await browser.bookmarks.getChildren(parentId);
+  } catch (e) {
+    parentId = 'toolbar_____';
+  }
+
+  const children = await browser.bookmarks.getChildren(parentId);
+  const rootFolderName = settings.rootFolder || 'LinkScout';
+  let linkScoutFolder = children.find(child => child.title === rootFolderName && !child.url);
+
+  if (!linkScoutFolder) {
+    linkScoutFolder = await browser.bookmarks.create({ parentId, title: rootFolderName });
+  }
+
+  const lsChildren = await browser.bookmarks.getChildren(linkScoutFolder.id);
+  let trashFolder = lsChildren.find(child => child.title === TRASH_FOLDER_NAME && !child.url);
+
+  if (!trashFolder) {
+    trashFolder = await browser.bookmarks.create({ parentId: linkScoutFolder.id, title: TRASH_FOLDER_NAME });
+  }
+
+  return { linkScoutFolder, trashFolder };
+}
+
+// Move a bookmark to trash folder and record timestamp
+async function moveBookmarkToTrash(bookmarkId) {
+  try {
+    const { trashFolder } = await getOrCreateTrashFolder();
+
+    // Move bookmark to trash
+    await browser.bookmarks.move(bookmarkId, { parentId: trashFolder.id });
+
+    // Store timestamp for auto-cleanup
+    const timestamps = (await browser.storage.local.get('trashTimestamps')).trashTimestamps || {};
+    timestamps[bookmarkId] = Date.now();
+    await browser.storage.local.set({ trashTimestamps: timestamps });
+
+    return true;
+  } catch (error) {
+    console.error('Error moving bookmark to trash:', error);
+    return false;
+  }
+}
+
+// Open a bookmark in new tab and move to trash
+async function openAndMoveToTrash(bookmarkId) {
+  try {
+    const bookmarks = await browser.bookmarks.get(bookmarkId);
+    if (bookmarks.length === 0 || !bookmarks[0].url) {
+      return { success: false, error: 'Bookmark not found' };
+    }
+
+    const bookmark = bookmarks[0];
+
+    // Open in new tab
+    await browser.tabs.create({ url: bookmark.url, active: false });
+
+    // Move to trash
+    await moveBookmarkToTrash(bookmarkId);
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error opening and trashing bookmark:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Collect all bookmark IDs from a folder (recursive)
+async function collectBookmarkIds(folderId) {
+  const ids = [];
+  const children = await browser.bookmarks.getChildren(folderId);
+
+  for (const child of children) {
+    if (child.url) {
+      ids.push(child.id);
+    } else {
+      const subIds = await collectBookmarkIds(child.id);
+      ids.push(...subIds);
+    }
+  }
+
+  return ids;
+}
+
+// Open all bookmarks in a folder and move to trash
+async function openAllInFolderAndTrash(folderId) {
+  try {
+    const bookmarkIds = await collectBookmarkIds(folderId);
+    let count = 0;
+
+    for (const id of bookmarkIds) {
+      const result = await openAndMoveToTrash(id);
+      if (result.success) count++;
+    }
+
+    return { success: true, count };
+  } catch (error) {
+    console.error('Error opening all in folder:', error);
+    return { success: false, count: 0, error: error.message };
+  }
+}
+
+// Empty trash folder completely
+async function emptyTrash() {
+  try {
+    const { trashFolder } = await getOrCreateTrashFolder();
+    const children = await browser.bookmarks.getChildren(trashFolder.id);
+
+    for (const child of children) {
+      if (child.url) {
+        await browser.bookmarks.remove(child.id);
+      } else {
+        await browser.bookmarks.removeTree(child.id);
+      }
+    }
+
+    // Clear timestamps
+    await browser.storage.local.set({ trashTimestamps: {} });
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error emptying trash:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Cleanup items older than 30 days from trash
+async function cleanupOldTrashItems() {
+  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+
+  try {
+    const { trashFolder } = await getOrCreateTrashFolder();
+    const children = await browser.bookmarks.getChildren(trashFolder.id);
+    const timestamps = (await browser.storage.local.get('trashTimestamps')).trashTimestamps || {};
+
+    let cleanedCount = 0;
+    const newTimestamps = { ...timestamps };
+
+    for (const child of children) {
+      const trashedAt = timestamps[child.id];
+
+      // If no timestamp, set one now (for existing items before this feature)
+      if (!trashedAt) {
+        newTimestamps[child.id] = now;
+        continue;
+      }
+
+      // If older than 30 days, delete
+      if (now - trashedAt > THIRTY_DAYS_MS) {
+        try {
+          if (child.url) {
+            await browser.bookmarks.remove(child.id);
+          } else {
+            await browser.bookmarks.removeTree(child.id);
+          }
+          delete newTimestamps[child.id];
+          cleanedCount++;
+        } catch (e) {
+          console.error('Error removing old trash item:', e);
+        }
+      }
+    }
+
+    await browser.storage.local.set({ trashTimestamps: newTimestamps });
+    console.log(`Trash cleanup: removed ${cleanedCount} items older than 30 days`);
+
+    return { success: true, cleanedCount };
+  } catch (error) {
+    console.error('Error during trash cleanup:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Build bookmark tree for sidebar (excluding trash)
+async function getBookmarkTreeForSidebar() {
+  try {
+    const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
+    let parentId = settings.bookmarkLocation || 'toolbar_____';
+
+    try {
+      await browser.bookmarks.getChildren(parentId);
+    } catch (e) {
+      parentId = 'toolbar_____';
+    }
+
+    const children = await browser.bookmarks.getChildren(parentId);
+    const rootFolderName = settings.rootFolder || 'LinkScout';
+    const linkScoutFolder = children.find(child => child.title === rootFolderName && !child.url);
+
+    if (!linkScoutFolder) {
+      return { bookmarks: [], trash: [], linkscoutFolderId: null, trashFolderId: null };
+    }
+
+    const { trashFolder } = await getOrCreateTrashFolder();
+
+    // Build tree recursively
+    async function buildTree(folderId) {
+      const items = [];
+      const children = await browser.bookmarks.getChildren(folderId);
+
+      for (const child of children) {
+        if (child.title === TRASH_FOLDER_NAME) continue;
+
+        if (child.url) {
+          items.push({
+            id: child.id,
+            title: child.title,
+            url: child.url,
+            type: 'bookmark'
+          });
+        } else {
+          const subItems = await buildTree(child.id);
+          items.push({
+            id: child.id,
+            title: child.title,
+            type: 'folder',
+            children: subItems
+          });
+        }
+      }
+
+      return items;
+    }
+
+    const bookmarks = await buildTree(linkScoutFolder.id);
+
+    // Get trash items
+    const trashChildren = await browser.bookmarks.getChildren(trashFolder.id);
+    const trash = trashChildren.map(child => ({
+      id: child.id,
+      title: child.title,
+      url: child.url,
+      type: child.url ? 'bookmark' : 'folder'
+    }));
+
+    return {
+      bookmarks,
+      trash,
+      linkscoutFolderId: linkScoutFolder.id,
+      trashFolderId: trashFolder.id
+    };
+  } catch (error) {
+    console.error('Error getting bookmark tree:', error);
+    return { error: error.message };
+  }
+}
+
+// Setup alarm for daily trash cleanup
+browser.alarms.create('cleanup-trash', { periodInMinutes: 1440 }); // 24 hours
+
+browser.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'cleanup-trash') {
+    cleanupOldTrashItems();
+  }
+});
+
+// Run cleanup on startup
+cleanupOldTrashItems();
+
+// Listen for messages from options page and sidebar
 browser.runtime.onMessage.addListener(async (message, sender) => {
   if (message.action === 'reorganizeFolders') {
     const result = await reorganizeAllFolders(message.settings);
     return result;
+  }
+
+  // Sidebar message handlers
+  if (message.action === 'getBookmarkTree') {
+    return await getBookmarkTreeForSidebar();
+  }
+
+  if (message.action === 'openAndTrash') {
+    return await openAndMoveToTrash(message.bookmarkId);
+  }
+
+  if (message.action === 'openAllInFolder') {
+    return await openAllInFolderAndTrash(message.folderId);
+  }
+
+  if (message.action === 'emptyTrash') {
+    return await emptyTrash();
   }
 });
 

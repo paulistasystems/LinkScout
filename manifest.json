@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "LinkScout",
-  "version": "2.1",
+  "version": "2.2",
   "description": "Saves links from selected text as bookmarks with smart organization.",
   "browser_specific_settings": {
     "gecko": {
@@ -23,8 +23,15 @@
     "notifications",
     "storage",
     "tabs",
+    "alarms",
     "<all_urls>"
   ],
+  "sidebar_action": {
+    "default_panel": "sidebar/sidebar.html",
+    "default_icon": "icons/linkscout-48.svg",
+    "default_title": "LinkScout - Favoritos",
+    "open_at_install": false
+  },
   "background": {
     "scripts": [
       "background.js"

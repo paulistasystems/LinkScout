@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <title>LinkScout - Favoritos</title>
+    <link rel="stylesheet" href="sidebar.css">
+</head>
+
+<body>
+    <div class="sidebar-container">
+        <header class="sidebar-header">
+            <h1>🔗 LinkScout</h1>
+            <button id="refreshBtn" class="icon-btn" title="Atualizar">🔄</button>
+        </header>
+
+        <div class="sidebar-content">
+            <div id="loadingState" class="state-message">
+                <span class="spinner"></span>
+                Carregando favoritos...
+            </div>
+
+            <div id="emptyState" class="state-message" style="display: none;">
+                📭 Nenhum favorito salvo ainda.
+            </div>
+
+            <div id="bookmarkTree" class="bookmark-tree"></div>
+        </div>
+
+        <div class="trash-section">
+            <div class="trash-header">
+                <span>🗑️ Lixeira</span>
+                <span id="trashCount" class="trash-count">0</span>
+            </div>
+            <div id="trashContent" class="trash-content" style="display: none;"></div>
+            <div class="trash-actions">
+                <button id="emptyTrashBtn" class="btn btn-danger" disabled>Esvaziar Lixeira</button>
+            </div>
+            <p class="trash-hint">Items são deletados automaticamente após 30 dias</p>
+        </div>
+    </div>
+
+    <script src="sidebar.js"></script>
+</body>
+
+</html>
