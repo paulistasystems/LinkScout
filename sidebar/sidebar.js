@@ -11,6 +11,8 @@ let trashCountEl;
 let trashContentEl;
 let emptyTrashBtn;
 let refreshBtn;
+let collapseAllBtn;
+let expandAllBtn;
 
 // State
 let linkscoutFolderId = null;
@@ -24,11 +26,15 @@ document.addEventListener('DOMContentLoaded', () => {
     trashContentEl = document.getElementById('trashContent');
     emptyTrashBtn = document.getElementById('emptyTrashBtn');
     refreshBtn = document.getElementById('refreshBtn');
+    collapseAllBtn = document.getElementById('collapseAllBtn');
+    expandAllBtn = document.getElementById('expandAllBtn');
 
     // Event listeners
     refreshBtn.addEventListener('click', loadBookmarks);
     emptyTrashBtn.addEventListener('click', emptyTrash);
     document.querySelector('.trash-header').addEventListener('click', toggleTrashContent);
+    collapseAllBtn.addEventListener('click', collapseAllFolders);
+    expandAllBtn.addEventListener('click', expandAllFolders);
 
     // Initial load
     loadBookmarks();
@@ -309,4 +315,14 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+function collapseAllFolders() {
+    const folders = bookmarkTreeEl.querySelectorAll('.folder');
+    folders.forEach(folder => folder.classList.add('collapsed'));
+}
+
+function expandAllFolders() {
+    const folders = bookmarkTreeEl.querySelectorAll('.folder');
+    folders.forEach(folder => folder.classList.remove('collapsed'));
 }

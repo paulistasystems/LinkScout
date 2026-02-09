@@ -25,9 +25,11 @@ LinkScout makes it easy to save and organize links from any webpage. Whether you
 - 🔗 **Save Links from Selection** - Extract and save all links from selected text
 - 🔗 **Save Single Link** - Right-click on any link to save it directly
 - 📑 **Save & Close All Tabs** - Save all open tabs and close them (creates a session folder)
+- 🗂️ **Sidebar Manager** - View, open, and manage bookmarks. Includes expand/collapse all, open all in tabs + auto-trash, and 30-day trash cleanup
 - 📁 **Smart Organization** - Links saved under `LinkScout / [Page Title] / [Link]`
 - 📂 **Auto Subfolders** - When saving more than X links, automatically creates numbered subfolders (e.g., 1-10, 11-20)
 - 🔄 **Duplicate Detection** - Automatically detects and skips duplicate links globally using IndexedDB
+- 🗑️ **Trash Management** - Opened links move to Trash automatically. Trash auto-empties after 30 days
 - ⬆️ **Newest First** - Option to show newest links/folders at the top (configurable)
 - ⚙️ **Configurable** - Choose bookmark location, folder name and more
 
@@ -114,6 +116,14 @@ This extension is written in plain JavaScript with no external dependencies or b
 1. Right-click on any tab or page
 2. Click "🔗 LinkScout: Salvar e Fechar Todas as Abas"
 3. All tabs are saved and closed, a new blank tab is created
+
+### Sidebar Manager
+1. Click the LinkScout icon in the sidebar (or press Ctrl+B/Cmd+B and select LinkScout)
+2. **Navigate**: Expand/collapse folders to see bookmarks
+3. **Open & Trash**: Click any bookmark to open it in a new tab and automatically move it to the "🗑️ Lixeira" folder
+4. **Open All**: Click "🚀 Abrir tudo" on a folder to open all bookmarks in tabs and move them to trash
+5. **Manage Trash**: View trashed items and empty trash manually (items are auto-deleted after 30 days)
+6. **Toolbar**: Use ➖ to collapse all, ➕ to expand all, and 🔄 to refresh the view
 
 ## Configuration
 
