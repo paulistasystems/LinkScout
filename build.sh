@@ -23,7 +23,9 @@ zip -r "$OUTPUT_FILE" \
     background.js \
     content.js \
     options.html \
+    options.html \
     options.js \
+    sidebar/ \
     icons/ \
     -x "*.DS_Store" \
     -x "*.git*" \

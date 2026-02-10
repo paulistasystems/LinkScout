@@ -912,20 +912,59 @@ async function collectBookmarkIds(folderId) {
 }
 
 // Open all bookmarks in a folder and remove
+// Open all bookmarks in a folder and remove
 async function openAllInFolderAndRemove(folderId) {
   try {
     const bookmarkIds = await collectBookmarkIds(folderId);
     let count = 0;
+
+    // Get parent ID before deleting items, for timestamp update
+    const folders = await browser.bookmarks.get(folderId);
+    const parentId = folders[0] ? folders[0].parentId : null;
 
     for (const id of bookmarkIds) {
       const result = await openAndRemove(id);
       if (result.success) count++;
     }
 
+    // Check if folder is empty and delete it if so
+    const children = await browser.bookmarks.getChildren(folderId);
+    if (children.length === 0) {
+      await browser.bookmarks.remove(folderId);
+      // Folder deleted, update parent's timestamp (it was modified)
+      if (parentId) {
+        await updateFolderTimestamp(parentId);
+      }
+    } else {
+      // Folder remains, update its own timestamp so it moves to top (links were removed)
+      await updateFolderTimestamp(folderId);
+    }
+
     return { success: true, count };
   } catch (error) {
     console.error('Error opening all in folder:', error);
     return { success: false, count: 0, error: error.message };
+  }
+}
+
+// Delete a folder and its contents
+async function deleteFolderAndContents(folderId) {
+  try {
+    // Get parent ID before deleting, for timestamp update
+    const folders = await browser.bookmarks.get(folderId);
+    const parentId = folders[0] ? folders[0].parentId : null;
+
+    await browser.bookmarks.removeTree(folderId);
+
+    // Update parent timestamp to move it to top
+    if (parentId) {
+      await updateFolderTimestamp(parentId);
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error deleting folder:', error);
+    return { success: false, error: error.message };
   }
 }
 
@@ -1047,6 +1086,10 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
 
   if (message.action === 'openAllInFolder') {
     return await openAllInFolderAndRemove(message.folderId);
+  }
+
+  if (message.action === 'deleteFolder') {
+    return await deleteFolderAndContents(message.folderId);
   }
 });
 

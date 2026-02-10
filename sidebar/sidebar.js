@@ -140,11 +140,19 @@ function createFolderElement(folder) {
 
     const actionsDiv = document.createElement('div');
     actionsDiv.className = 'folder-actions';
+
     const openAllBtn = document.createElement('button');
     openAllBtn.className = 'folder-action-btn open-all-btn';
     openAllBtn.title = 'Open all in tabs';
     openAllBtn.textContent = '🚀 Open all';
     actionsDiv.appendChild(openAllBtn);
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'folder-action-btn delete-folder-btn';
+    deleteBtn.title = 'Excluir pasta'; // "Excluir pasta" as requested
+    deleteBtn.textContent = '🗑️';
+    actionsDiv.appendChild(deleteBtn);
+
     headerEl.appendChild(actionsDiv);
 
     headerEl.addEventListener('click', (e) => {
@@ -156,6 +164,11 @@ function createFolderElement(folder) {
     openAllBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         openAllInFolder(folder.id);
+    });
+
+    deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteFolder(folder.id);
     });
 
     folderEl.appendChild(headerEl);
@@ -266,6 +279,18 @@ async function openAllInFolder(folderId) {
         }
     } catch (error) {
         console.error('Error opening all bookmarks:', error);
+    }
+}
+
+async function deleteFolder(folderId) {
+    try {
+        await browser.runtime.sendMessage({
+            action: 'deleteFolder',
+            folderId
+        });
+        loadBookmarks();
+    } catch (error) {
+        console.error('Error deleting folder:', error);
     }
 }
 
