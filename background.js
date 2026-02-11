@@ -856,11 +856,47 @@ async function reorganizeAllFolders(settings) {
 // SIDEBAR FUNCTIONALITY
 // ============================================
 
-// Update timestamp for a folder when its content changes
+// Update timestamp for a folder and its ancestors when its content changes
 async function updateFolderTimestamp(folderId) {
   try {
     const timestamps = (await browser.storage.local.get('folderTimestamps')).folderTimestamps || {};
-    timestamps[folderId] = Date.now();
+    const now = Date.now();
+
+    // Update the folder itself
+    timestamps[folderId] = now;
+
+    // Walk up the tree to update ancestors
+    let currentId = folderId;
+
+    // Safety break to prevent infinite loops
+    let depth = 0;
+    const MAX_DEPTH = 20;
+
+    while (currentId && depth < MAX_DEPTH) {
+      depth++;
+      try {
+        const results = await browser.bookmarks.get(currentId);
+        if (!results || results.length === 0 || !results[0].parentId) {
+          break;
+        }
+
+        const parentId = results[0].parentId;
+
+        // Stop at root containers
+        if (parentId === 'root________' || parentId === 'toolbar_____' ||
+          parentId === 'menu________' || parentId === 'unfiled_____') {
+          break;
+        }
+
+        // Update ancestor
+        timestamps[parentId] = now;
+        currentId = parentId;
+      } catch (e) {
+        // Folder might have been deleted or other error
+        break;
+      }
+    }
+
     await browser.storage.local.set({ folderTimestamps: timestamps });
   } catch (error) {
     console.error('Error updating folder timestamp:', error);
