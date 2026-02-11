@@ -25,12 +25,12 @@ LinkScout makes it easy to save and organize links from any webpage. Whether you
 - 🔗 **Save Links from Selection** - Extract and save all links from selected text
 - 🔗 **Save Single Link** - Right-click on any link to save it directly
 - 📑 **Save & Close All Tabs** - Save all open tabs and close them (creates a session folder)
+- 🔍 **Search & Sort** - Realtime search and configurable sort order (Newest/Oldest) in Sidebar
 - 🗂️ **Sidebar Manager** - View, open, and manage bookmarks. Includes expand/collapse all, open all in tabs + auto-trash, and 30-day trash cleanup
 - 📁 **Smart Organization** - Links saved under `LinkScout / [Page Title] / [Link]`
 - 📂 **Auto Subfolders** - When saving more than X links, automatically creates numbered subfolders (e.g., 1-10, 11-20)
 - 🔄 **Duplicate Detection** - Automatically detects and skips duplicate links globally using IndexedDB
 - 🗑️ **Trash Management** - Opened links move to Trash automatically. Trash auto-empties after 30 days
-- ⬆️ **Newest First** - Option to show newest links/folders at the top (configurable)
 - ⚙️ **Configurable** - Choose bookmark location, folder name and more
 
 ## Build Instructions

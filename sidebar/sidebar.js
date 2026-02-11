@@ -12,10 +12,15 @@ let emptyTrashBtn;
 let refreshBtn;
 let collapseAllBtn;
 let expandAllBtn;
+let sortBtn;
+let searchInput;
 
 // State
 let linkscoutFolderId = null;
 let trashFolderId = null;
+let currentSortOrder = 'desc'; // 'desc' or 'asc' (desc = newest first)
+let searchQuery = '';
+let allBookmarksData = []; // Store raw data for filtering/sorting
 
 document.addEventListener('DOMContentLoaded', () => {
     bookmarkTreeEl = document.getElementById('bookmarkTree');
@@ -24,11 +29,18 @@ document.addEventListener('DOMContentLoaded', () => {
     refreshBtn = document.getElementById('refreshBtn');
     collapseAllBtn = document.getElementById('collapseAllBtn');
     expandAllBtn = document.getElementById('expandAllBtn');
+    sortBtn = document.getElementById('sortBtn');
+    searchInput = document.getElementById('searchInput');
 
     // Event listeners
     refreshBtn.addEventListener('click', loadBookmarks);
     collapseAllBtn.addEventListener('click', collapseAllFolders);
     expandAllBtn.addEventListener('click', expandAllFolders);
+    sortBtn.addEventListener('click', toggleSortOrder);
+    searchInput.addEventListener('input', handleSearch);
+
+    // Initial sort icon
+    updateSortIcon();
 
     // Initial load
     loadBookmarks();
@@ -48,8 +60,9 @@ async function loadBookmarks() {
         }
 
         linkscoutFolderId = result.linkscoutFolderId;
+        allBookmarksData = result.bookmarks;
 
-        renderBookmarkTree(result.bookmarks);
+        renderBookmarkTree();
     } catch (error) {
         console.error('Error loading bookmarks:', error);
         showEmpty(true);
@@ -70,22 +83,37 @@ function showEmpty(show) {
     emptyStateEl.style.display = show ? 'flex' : 'none';
 }
 
-function renderBookmarkTree(items) {
+function renderBookmarkTree() {
     bookmarkTreeEl.innerHTML = '';
 
-    // Filter out empty folders
-    const filteredItems = filterEmptyFolders(items);
+    // 1. Filter
+    let processedItems = filterNodes(JSON.parse(JSON.stringify(allBookmarksData)), searchQuery);
 
-    if (!filteredItems || filteredItems.length === 0) {
+    // 2. Sort
+    processedItems = sortNodes(processedItems);
+
+    // 3. Filter empty folders (post-filter cleanup)
+    processedItems = filterEmptyFolders(processedItems);
+
+    if (!processedItems || processedItems.length === 0) {
+        if (searchQuery) {
+            // Show "No results" specifically for search if needed, or just standard empty
+            // logic could be improved here but standard empty is fine
+        }
         showEmpty(true);
         return;
     }
 
     showEmpty(false);
 
-    filteredItems.forEach(item => {
+    processedItems.forEach(item => {
         if (item.type === 'folder') {
-            bookmarkTreeEl.appendChild(createFolderElement(item));
+            const folderEl = createFolderElement(item);
+            // If searching, expand folders that have matches
+            if (searchQuery) {
+                folderEl.classList.remove('collapsed');
+            }
+            bookmarkTreeEl.appendChild(folderEl);
         } else if (item.type === 'bookmark') {
             bookmarkTreeEl.appendChild(createBookmarkElement(item));
         }
@@ -309,4 +337,68 @@ function collapseAllFolders() {
 function expandAllFolders() {
     const folders = bookmarkTreeEl.querySelectorAll('.folder');
     folders.forEach(folder => folder.classList.remove('collapsed'));
+}
+
+// Search Handler
+function handleSearch(e) {
+    searchQuery = e.target.value.toLowerCase().trim();
+    renderBookmarkTree();
+}
+
+// Sort Config
+function toggleSortOrder() {
+    currentSortOrder = currentSortOrder === 'desc' ? 'asc' : 'desc';
+    updateSortIcon();
+    renderBookmarkTree();
+}
+
+function updateSortIcon() {
+    sortBtn.textContent = currentSortOrder === 'desc' ? '⬇️' : '⬆️';
+    sortBtn.title = currentSortOrder === 'desc' ? 'Sort: Newest First' : 'Sort: Oldest First';
+}
+
+// Recursive Sort
+function sortNodes(nodes) {
+    if (!nodes) return [];
+
+    return nodes.sort((a, b) => {
+        // Folders always first? Replicating background logic preference
+        const aIsFolder = a.type === 'folder';
+        const bIsFolder = b.type === 'folder';
+
+        if (aIsFolder && bIsFolder) {
+            // Sort folders by time
+            const timeA = a.updatedAt || 0;
+            const timeB = b.updatedAt || 0;
+            return currentSortOrder === 'desc' ? timeB - timeA : timeA - timeB;
+        }
+
+        if (aIsFolder && !bIsFolder) return -1;
+        if (!aIsFolder && bIsFolder) return 1;
+
+        return 0; // Keep bookmarks order (or sort them too if needed, but request focused on folders)
+    }).map(node => {
+        if (node.children) {
+            node.children = sortNodes(node.children);
+        }
+        return node;
+    });
+}
+
+// Recursive Filter
+function filterNodes(nodes, query) {
+    if (!query) return nodes;
+
+    return nodes.filter(node => {
+        const matchesRequest = (node.title && node.title.toLowerCase().includes(query)) ||
+            (node.url && node.url.toLowerCase().includes(query));
+
+        if (node.children) {
+            node.children = filterNodes(node.children, query);
+            // If it's a folder, keep it if it matches OR if it has matching children
+            return matchesRequest || node.children.length > 0;
+        }
+
+        return matchesRequest;
+    });
 }

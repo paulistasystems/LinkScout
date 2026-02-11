@@ -876,6 +876,7 @@ async function openAndRemove(bookmarkId) {
     }
 
     const bookmark = bookmarks[0];
+    const parentId = bookmark.parentId;
 
     // Open in new tab
     await browser.tabs.create({ url: bookmark.url, active: false });
@@ -883,8 +884,10 @@ async function openAndRemove(bookmarkId) {
     // Remove the bookmark
     await browser.bookmarks.remove(bookmarkId);
 
-    // Update parent folder timestamp (handled by onRemoved listener, but good to be explicit if needed)
-    // The onRemoved listener will handle the timestamp update.
+    // Explicitly update parent folder timestamp to ensure it's fresh for the sidebar reload
+    if (parentId) {
+        await updateFolderTimestamp(parentId);
+    }
 
     return { success: true };
   } catch (error) {

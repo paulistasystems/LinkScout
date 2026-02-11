@@ -30,14 +30,46 @@ body {
 }
 
 .sidebar-header h1 {
-    font-size: 1.1em;
-    font-weight: 600;
-    color: white;
+    display: none;
 }
 
 .header-actions {
     display: flex;
-    gap: 4px;
+    gap: 0;
+    width: 100%;
+}
+
+.search-container {
+    flex: 1;
+    margin-right: 8px;
+    display: flex;
+}
+
+#searchInput {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.15);
+    border: none;
+    border-radius: 4px;
+    padding: 6px 8px;
+    color: white;
+    font-size: 13px;
+    outline: none;
+    transition: background 0.2s;
+}
+
+#searchInput::placeholder {
+    color: rgba(255, 255, 255, 0.5);
+}
+
+#searchInput:focus {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.divider {
+    width: 1px;
+    background: rgba(255, 255, 255, 0.2);
+    margin: 0 4px;
+    height: 24px;
 }
 
 .icon-btn {
