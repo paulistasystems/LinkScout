@@ -367,10 +367,24 @@ function sortNodes(nodes) {
         const bIsFolder = b.type === 'folder';
 
         if (aIsFolder && bIsFolder) {
-            // Sort folders by time
-            const timeA = a.updatedAt || 0;
-            const timeB = b.updatedAt || 0;
-            return currentSortOrder === 'desc' ? timeB - timeA : timeA - timeB;
+            // Sort folders by time (updatedAt > dateAdded > title)
+            const updatedA = a.updatedAt || 0;
+            const updatedB = b.updatedAt || 0;
+
+            if (updatedA !== updatedB) {
+                return currentSortOrder === 'desc' ? updatedB - updatedA : updatedA - updatedB;
+            }
+
+            // Fallback to creation date
+            const createdA = a.dateAdded || 0;
+            const createdB = b.dateAdded || 0;
+
+            if (createdA !== createdB) {
+                return currentSortOrder === 'desc' ? createdB - createdA : createdA - createdB;
+            }
+
+            // Fallback to title
+            return a.title.localeCompare(b.title);
         }
 
         if (aIsFolder && !bIsFolder) return -1;

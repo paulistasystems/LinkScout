@@ -886,7 +886,7 @@ async function openAndRemove(bookmarkId) {
 
     // Explicitly update parent folder timestamp to ensure it's fresh for the sidebar reload
     if (parentId) {
-        await updateFolderTimestamp(parentId);
+      await updateFolderTimestamp(parentId);
     }
 
     return { success: true };
@@ -1005,7 +1005,8 @@ async function getBookmarkTreeForSidebar() {
             id: child.id,
             title: child.title,
             url: child.url,
-            type: 'bookmark'
+            type: 'bookmark',
+            dateAdded: child.dateAdded || 0
           });
         } else {
           const subItems = await buildTree(child.id);
@@ -1014,7 +1015,8 @@ async function getBookmarkTreeForSidebar() {
             title: child.title,
             type: 'folder',
             children: subItems,
-            updatedAt: timestamps[child.id] || 0 // Default to 0 if not set
+            updatedAt: timestamps[child.id] || 0, // Default to 0 if not set
+            dateAdded: child.dateAdded || 0
           });
         }
       }
