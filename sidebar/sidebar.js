@@ -152,7 +152,8 @@ function filterEmptyFolders(items) {
 
 function createFolderElement(folder) {
     const folderEl = document.createElement('div');
-    folderEl.className = 'folder';
+    const isVirtualFolder = String(folder.id).startsWith('domain-');
+    folderEl.className = isVirtualFolder ? 'folder virtual' : 'folder';
     folderEl.dataset.id = folder.id;
 
     const bookmarkCount = countBookmarks(folder);
@@ -180,7 +181,7 @@ function createFolderElement(folder) {
     countSpan.textContent = bookmarkCount;
     headerEl.appendChild(countSpan);
 
-    const isVirtualFolder = String(folder.id).startsWith('domain-');
+
 
     const actionsDiv = document.createElement('div');
     actionsDiv.className = 'folder-actions';

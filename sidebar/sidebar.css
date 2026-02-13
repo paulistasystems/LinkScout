@@ -199,6 +199,10 @@ body {
     opacity: 1;
 }
 
+.folder.virtual>.folder-header .folder-actions {
+    opacity: 1;
+}
+
 .folder-action-btn {
     background: rgba(102, 126, 234, 0.4);
     border: none;
