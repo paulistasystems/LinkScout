@@ -182,24 +182,34 @@ function createFolderElement(folder) {
 
     const isVirtualFolder = String(folder.id).startsWith('domain-');
 
-    if (!isVirtualFolder) {
-        const actionsDiv = document.createElement('div');
-        actionsDiv.className = 'folder-actions';
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'folder-actions';
 
-        const openAllBtn = document.createElement('button');
-        openAllBtn.className = 'folder-action-btn open-all-btn';
-        openAllBtn.title = 'Open all in tabs';
-        openAllBtn.textContent = '🚀 Open all';
-        actionsDiv.appendChild(openAllBtn);
+    const openAllBtn = document.createElement('button');
+    openAllBtn.className = 'folder-action-btn open-all-btn';
+    openAllBtn.title = 'Open all in tabs';
+    openAllBtn.textContent = '🚀 Open all';
+    actionsDiv.appendChild(openAllBtn);
 
-        const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'folder-action-btn delete-folder-btn';
-        deleteBtn.title = 'Excluir pasta';
-        deleteBtn.textContent = '🗑️';
-        actionsDiv.appendChild(deleteBtn);
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'folder-action-btn delete-folder-btn';
+    deleteBtn.title = 'Excluir pasta';
+    deleteBtn.textContent = '🗑️';
+    actionsDiv.appendChild(deleteBtn);
 
-        headerEl.appendChild(actionsDiv);
+    headerEl.appendChild(actionsDiv);
 
+    if (isVirtualFolder) {
+        openAllBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openAllInVirtualFolder(folder);
+        });
+
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteVirtualFolder(folder);
+        });
+    } else {
         openAllBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             openAllInFolder(folder.id);
@@ -338,6 +348,37 @@ async function deleteFolder(folderId) {
     } catch (error) {
         console.error('Error deleting folder:', error);
     }
+}
+
+// Virtual folder operations (domain grouping)
+function collectIdsFromVirtualFolder(folder) {
+    const ids = [];
+    if (!folder.children) return ids;
+    for (const child of folder.children) {
+        if (child.type === 'bookmark') {
+            ids.push(child.id);
+        } else if (child.type === 'folder' && child.children) {
+            ids.push(...collectIdsFromVirtualFolder(child));
+        }
+    }
+    return ids;
+}
+
+async function openAllInVirtualFolder(folder) {
+    const ids = collectIdsFromVirtualFolder(folder);
+    for (const id of ids) {
+        await openAndTrash(id);
+    }
+}
+
+async function deleteVirtualFolder(folder) {
+    const ids = collectIdsFromVirtualFolder(folder);
+    for (const id of ids) {
+        try {
+            await browser.runtime.sendMessage({ action: 'deleteBookmark', bookmarkId: id });
+        } catch (e) { /* ignore */ }
+    }
+    loadBookmarks();
 }
 
 

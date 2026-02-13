@@ -1137,6 +1137,15 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
   if (message.action === 'deleteFolder') {
     return await deleteFolderAndContents(message.folderId);
   }
+
+  if (message.action === 'deleteBookmark') {
+    try {
+      await browser.bookmarks.remove(message.bookmarkId);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
 });
 
 // Function to create context menus
