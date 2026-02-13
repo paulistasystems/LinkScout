@@ -14,6 +14,7 @@ let collapseAllBtn;
 let expandAllBtn;
 let sortBtn;
 let searchInput;
+let groupByDomainBtn;
 
 // State
 let linkscoutFolderId = null;
@@ -21,6 +22,7 @@ let trashFolderId = null;
 let currentSortOrder = 'desc'; // 'desc' or 'asc' (desc = newest first)
 let searchQuery = '';
 let allBookmarksData = []; // Store raw data for filtering/sorting
+let groupByDomain = false;
 
 document.addEventListener('DOMContentLoaded', () => {
     bookmarkTreeEl = document.getElementById('bookmarkTree');
@@ -31,6 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
     expandAllBtn = document.getElementById('expandAllBtn');
     sortBtn = document.getElementById('sortBtn');
     searchInput = document.getElementById('searchInput');
+    groupByDomainBtn = document.getElementById('groupByDomainBtn');
 
     // Event listeners
     refreshBtn.addEventListener('click', loadBookmarks);
@@ -38,6 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
     expandAllBtn.addEventListener('click', expandAllFolders);
     sortBtn.addEventListener('click', toggleSortOrder);
     searchInput.addEventListener('input', handleSearch);
+    groupByDomainBtn.addEventListener('click', toggleGroupByDomain);
 
     // Initial sort icon
     updateSortIcon();
@@ -86,20 +90,28 @@ function showEmpty(show) {
 function renderBookmarkTree() {
     bookmarkTreeEl.innerHTML = '';
 
-    // 1. Filter
-    let processedItems = filterNodes(JSON.parse(JSON.stringify(allBookmarksData)), searchQuery);
+    let processedItems;
 
-    // 2. Sort
-    processedItems = sortNodes(processedItems);
-
-    // 3. Filter empty folders (post-filter cleanup)
-    processedItems = filterEmptyFolders(processedItems);
+    if (groupByDomain) {
+        // Group by domain mode: flatten all bookmarks, then group by hostname
+        let allItems = JSON.parse(JSON.stringify(allBookmarksData));
+        // Apply search filter first
+        allItems = filterNodes(allItems, searchQuery);
+        processedItems = groupBookmarksByDomain(allItems);
+        // Sort domain folders alphabetically (or by count)
+        processedItems = sortNodes(processedItems);
+        processedItems = filterEmptyFolders(processedItems);
+    } else {
+        // Normal mode
+        // 1. Filter
+        processedItems = filterNodes(JSON.parse(JSON.stringify(allBookmarksData)), searchQuery);
+        // 2. Sort
+        processedItems = sortNodes(processedItems);
+        // 3. Filter empty folders (post-filter cleanup)
+        processedItems = filterEmptyFolders(processedItems);
+    }
 
     if (!processedItems || processedItems.length === 0) {
-        if (searchQuery) {
-            // Show "No results" specifically for search if needed, or just standard empty
-            // logic could be improved here but standard empty is fine
-        }
         showEmpty(true);
         return;
     }
@@ -109,8 +121,8 @@ function renderBookmarkTree() {
     processedItems.forEach(item => {
         if (item.type === 'folder') {
             const folderEl = createFolderElement(item);
-            // If searching, expand folders that have matches
-            if (searchQuery) {
+            // If searching or grouping by domain, expand folders
+            if (searchQuery || groupByDomain) {
                 folderEl.classList.remove('collapsed');
             }
             bookmarkTreeEl.appendChild(folderEl);
@@ -166,37 +178,41 @@ function createFolderElement(folder) {
     countSpan.textContent = bookmarkCount;
     headerEl.appendChild(countSpan);
 
-    const actionsDiv = document.createElement('div');
-    actionsDiv.className = 'folder-actions';
+    const isVirtualFolder = String(folder.id).startsWith('domain-');
 
-    const openAllBtn = document.createElement('button');
-    openAllBtn.className = 'folder-action-btn open-all-btn';
-    openAllBtn.title = 'Open all in tabs';
-    openAllBtn.textContent = '🚀 Open all';
-    actionsDiv.appendChild(openAllBtn);
+    if (!isVirtualFolder) {
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'folder-actions';
 
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'folder-action-btn delete-folder-btn';
-    deleteBtn.title = 'Excluir pasta'; // "Excluir pasta" as requested
-    deleteBtn.textContent = '🗑️';
-    actionsDiv.appendChild(deleteBtn);
+        const openAllBtn = document.createElement('button');
+        openAllBtn.className = 'folder-action-btn open-all-btn';
+        openAllBtn.title = 'Open all in tabs';
+        openAllBtn.textContent = '🚀 Open all';
+        actionsDiv.appendChild(openAllBtn);
 
-    headerEl.appendChild(actionsDiv);
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'folder-action-btn delete-folder-btn';
+        deleteBtn.title = 'Excluir pasta';
+        deleteBtn.textContent = '🗑️';
+        actionsDiv.appendChild(deleteBtn);
+
+        headerEl.appendChild(actionsDiv);
+
+        openAllBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openAllInFolder(folder.id);
+        });
+
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteFolder(folder.id);
+        });
+    }
 
     headerEl.addEventListener('click', (e) => {
         if (!e.target.closest('.folder-action-btn')) {
             folderEl.classList.toggle('collapsed');
         }
-    });
-
-    openAllBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openAllInFolder(folder.id);
-    });
-
-    deleteBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        deleteFolder(folder.id);
     });
 
     folderEl.appendChild(headerEl);
@@ -337,6 +353,55 @@ function collapseAllFolders() {
 function expandAllFolders() {
     const folders = bookmarkTreeEl.querySelectorAll('.folder');
     folders.forEach(folder => folder.classList.remove('collapsed'));
+}
+
+// Group by Domain
+function toggleGroupByDomain() {
+    groupByDomain = !groupByDomain;
+    groupByDomainBtn.classList.toggle('active', groupByDomain);
+    renderBookmarkTree();
+}
+
+function collectAllBookmarksFromTree(items) {
+    const bookmarks = [];
+    if (!items) return bookmarks;
+    for (const item of items) {
+        if (item.type === 'bookmark') {
+            bookmarks.push(item);
+        } else if (item.type === 'folder' && item.children) {
+            bookmarks.push(...collectAllBookmarksFromTree(item.children));
+        }
+    }
+    return bookmarks;
+}
+
+function groupBookmarksByDomain(items) {
+    const allBookmarks = collectAllBookmarksFromTree(items);
+    const domainMap = {};
+
+    for (const bm of allBookmarks) {
+        let domain = 'other';
+        try {
+            domain = new URL(bm.url).hostname.replace(/^www\./, '');
+        } catch { /* keep 'other' */ }
+
+        if (!domainMap[domain]) {
+            domainMap[domain] = [];
+        }
+        domainMap[domain].push(bm);
+    }
+
+    // Convert to virtual folder objects
+    return Object.keys(domainMap)
+        .sort((a, b) => a.localeCompare(b))
+        .map(domain => ({
+            type: 'folder',
+            id: `domain-${domain}`,
+            title: domain,
+            children: domainMap[domain],
+            updatedAt: 0,
+            dateAdded: 0
+        }));
 }
 
 // Search Handler

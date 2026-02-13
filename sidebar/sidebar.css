@@ -88,6 +88,11 @@ body {
     transform: scale(1.05);
 }
 
+.icon-btn.active {
+    background: rgba(255, 255, 255, 0.4);
+    box-shadow: 0 0 6px rgba(102, 126, 234, 0.6);
+}
+
 /* Content Area */
 .sidebar-content {
     flex: 1;
