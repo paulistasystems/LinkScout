@@ -23,6 +23,7 @@ let currentSortOrder = 'desc'; // 'desc' or 'asc' (desc = newest first)
 let searchQuery = '';
 let allBookmarksData = []; // Store raw data for filtering/sorting
 let groupByDomain = false;
+let linksPerFolder = 10;
 
 document.addEventListener('DOMContentLoaded', () => {
     bookmarkTreeEl = document.getElementById('bookmarkTree');
@@ -65,6 +66,7 @@ async function loadBookmarks() {
 
         linkscoutFolderId = result.linkscoutFolderId;
         allBookmarksData = result.bookmarks;
+        linksPerFolder = result.linksPerFolder || 10;
 
         renderBookmarkTree();
     } catch (error) {
@@ -391,17 +393,47 @@ function groupBookmarksByDomain(items) {
         domainMap[domain].push(bm);
     }
 
-    // Convert to virtual folder objects
+    // Convert to virtual folder objects, splitting large domains into subfolders
     return Object.keys(domainMap)
         .sort((a, b) => a.localeCompare(b))
-        .map(domain => ({
-            type: 'folder',
-            id: `domain-${domain}`,
-            title: domain,
-            children: domainMap[domain],
-            updatedAt: 0,
-            dateAdded: 0
-        }));
+        .map(domain => {
+            const bookmarks = domainMap[domain];
+
+            if (bookmarks.length > linksPerFolder) {
+                // Split into numbered subfolders
+                const children = [];
+                for (let i = 0; i < bookmarks.length; i += linksPerFolder) {
+                    const chunk = bookmarks.slice(i, i + linksPerFolder);
+                    const startNum = i + 1;
+                    const endNum = i + chunk.length;
+                    children.push({
+                        type: 'folder',
+                        id: `domain-${domain}-${startNum}-${endNum}`,
+                        title: `${startNum}-${endNum}`,
+                        children: chunk,
+                        updatedAt: 0,
+                        dateAdded: 0
+                    });
+                }
+                return {
+                    type: 'folder',
+                    id: `domain-${domain}`,
+                    title: domain,
+                    children,
+                    updatedAt: 0,
+                    dateAdded: 0
+                };
+            }
+
+            return {
+                type: 'folder',
+                id: `domain-${domain}`,
+                title: domain,
+                children: bookmarks,
+                updatedAt: 0,
+                dateAdded: 0
+            };
+        });
 }
 
 // Search Handler

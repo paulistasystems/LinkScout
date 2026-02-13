@@ -1093,7 +1093,8 @@ async function getBookmarkTreeForSidebar() {
 
     return {
       bookmarks,
-      linkscoutFolderId: linkScoutFolder.id
+      linkscoutFolderId: linkScoutFolder.id,
+      linksPerFolder: settings.linksPerFolder || 10
     };
   } catch (error) {
     console.error('Error getting bookmark tree:', error);
