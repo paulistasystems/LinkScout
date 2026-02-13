@@ -589,15 +589,25 @@ async function saveAllTabsAndClose() {
   const tabs = await browser.tabs.query({ currentWindow: true });
 
   if (tabs.length === 0) {
-    // Removed notification code - Firefox notifications are unreliable
     return;
   }
+
+  // Filter valid tabs upfront — these will always be closed at the end
+  const validTabs = tabs.filter(tab =>
+    tab.url && !tab.url.startsWith('about:') && !tab.url.startsWith('moz-extension:')
+  );
+
+  if (validTabs.length === 0) {
+    return;
+  }
+
+  // Collect all valid tab IDs to close — regardless of bookmark save success
+  const tabsToClose = validTabs.map(tab => tab.id);
 
   let successCount = 0;
   let skippedCount = 0;
   let updatedCount = 0;
   let failCount = 0;
-  const tabsToClose = [];
 
   try {
     // Get bookmark location from settings
@@ -629,11 +639,6 @@ async function saveAllTabsAndClose() {
 
     // Create bookmarks with subfolder logic
     const linksPerFolder = settings.linksPerFolder || 10;
-
-    // Filter valid tabs first
-    const validTabs = tabs.filter(tab =>
-      tab.url && !tab.url.startsWith('about:') && !tab.url.startsWith('moz-extension:')
-    );
     const needsSubfolders = validTabs.length > linksPerFolder;
 
     if (needsSubfolders) {
@@ -663,7 +668,6 @@ async function saveAllTabsAndClose() {
             if (result.action === 'created') successCount++;
             else if (result.action === 'skipped') skippedCount++;
             else if (result.action === 'updated') updatedCount++;
-            tabsToClose.push(tab.id);
           } catch (error) {
             failCount++;
           }
@@ -684,24 +688,24 @@ async function saveAllTabsAndClose() {
           if (result.action === 'created') successCount++;
           else if (result.action === 'skipped') skippedCount++;
           else if (result.action === 'updated') updatedCount++;
-          tabsToClose.push(tab.id);
         } catch (error) {
           failCount++;
         }
       }
     }
+  } catch (error) {
+    console.error('Error saving tabs as bookmarks:', error);
+  }
 
-    // Close all saved tabs
+  // Always close all valid tabs, regardless of bookmark save success/failure
+  try {
     if (tabsToClose.length > 0) {
       // Create a new blank tab first to prevent browser from closing
       await browser.tabs.create({ active: true });
       await browser.tabs.remove(tabsToClose);
     }
-
-    // Removed notification code - Firefox notifications are unreliable
-
-  } catch (error) {
-    // Removed notification code - Firefox notifications are unreliable
+  } catch (closeError) {
+    console.error('Error closing tabs:', closeError);
   }
 }
 
