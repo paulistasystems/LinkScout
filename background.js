@@ -628,13 +628,13 @@ async function saveAllTabsAndClose() {
     const rootFolderName = settings.rootFolder || 'LinkScout';
     const linkScoutFolder = await findOrCreateFolder(parentId, rootFolderName);
 
-    // Create a folder named after weekday, date, and time
+    // Create a folder named after weekday - dd/mm/yyyy
     const now = new Date();
-    const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const weekday = weekdays[now.getDay()];
-    const date = now.toLocaleDateString('en-US');
-    const time = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-    const sessionName = `${weekday} ${date} ${time}`;
+    const weekday = now.toLocaleDateString('en-US', { weekday: 'long' });
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const year = now.getFullYear();
+    const sessionName = `${weekday} - ${day}/${month}/${year}`;
     const sessionFolder = await findOrCreateFolder(linkScoutFolder.id, sessionName, 0);
 
     // Create bookmarks with subfolder logic
