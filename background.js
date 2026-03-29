@@ -96,7 +96,7 @@ async function isLinkDuplicate(url) {
 }
 
 // Add a link to the database with full metadata (returns false if duplicate)
-async function addLinkToDatabase(url, title = '', folderId = '', folderPath = '', originalUrl = '') {
+async function addLinkToDatabase(url, title = '', folderId = '', folderPath = '', originalUrl = '', redirectResolved = false) {
   try {
     const db = await openDatabase();
     return new Promise((resolve) => {
@@ -110,7 +110,8 @@ async function addLinkToDatabase(url, title = '', folderId = '', folderPath = ''
         folderId,
         folderPath,
         createdAt: Date.now(),
-        order: 0
+        order: 0,
+        redirectResolved
       };
       const request = store.add(record);
 
@@ -508,6 +509,10 @@ async function resolveExistingLinksBackgroundJob() {
     let removedCount = 0;
 
     for (const record of allRecords) {
+      if (record.redirectResolved) {
+        continue;
+      }
+
       // Small delay to avoid blocking the browser and hitting rate limits quickly
       await delay(250);
 
@@ -560,7 +565,8 @@ async function resolveExistingLinksBackgroundJob() {
               const updatedRecord = {
                 ...record,
                 originalUrl: record.originalUrl || record.url,
-                url: resolvedUrl
+                url: resolvedUrl,
+                redirectResolved: true
               };
               const request = store.put(updatedRecord);
               request.onsuccess = () => resolve();
@@ -585,6 +591,23 @@ async function resolveExistingLinksBackgroundJob() {
           } catch (e) {
             console.error('[LinkScout] URL Resolver: Error updating resolved bookmark URL:', e);
           }
+        }
+      } else {
+        // No redirect found, URL is unchanged. Mark it as resolved so we don't check again.
+        try {
+          await new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            const updatedRecord = {
+              ...record,
+              redirectResolved: true
+            };
+            const request = store.put(updatedRecord);
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+          });
+        } catch (e) {
+          console.error('[LinkScout] URL Resolver: Error marking record as resolved:', e);
         }
       }
     }
@@ -734,7 +757,7 @@ async function createOrUpdateBookmark(parentId, title, url, index = undefined, f
   const newBookmark = await browser.bookmarks.create(createOptions);
 
   // Add to IndexedDB for global duplicate tracking with full metadata
-  await addLinkToDatabase(resolvedUrl, title, parentId, folderPath, originalUrl);
+  await addLinkToDatabase(resolvedUrl, title, parentId, folderPath, originalUrl, true);
 
   // Update folder timestamp
   await updateFolderTimestamp(parentId);
