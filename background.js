@@ -96,7 +96,7 @@ async function isLinkDuplicate(url) {
 }
 
 // Add a link to the database with full metadata (returns false if duplicate)
-async function addLinkToDatabase(url, title = '', folderId = '', folderPath = '') {
+async function addLinkToDatabase(url, title = '', folderId = '', folderPath = '', originalUrl = '') {
   try {
     const db = await openDatabase();
     return new Promise((resolve) => {
@@ -105,6 +105,7 @@ async function addLinkToDatabase(url, title = '', folderId = '', folderPath = ''
       const record = {
         id: generateId(),
         url,
+        originalUrl: originalUrl || url,
         title,
         folderId,
         folderPath,
@@ -358,9 +359,136 @@ browser.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
   await updateFolderTimestamp(removeInfo.parentId);
 });
 
-// Sync database on extension startup
+// Deduplicate existing database records by normalizing URLs
+// Runs asynchronously in background to avoid blocking the browser
+async function deduplicateExistingDatabase() {
+  try {
+    const db = await openDatabase();
+
+    // Get all records
+    const allRecords = await new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => resolve([]);
+    });
+
+    if (allRecords.length === 0) {
+      console.log('[LinkScout] No records to deduplicate');
+      return { removed: 0, updated: 0, total: 0 };
+    }
+
+    console.log(`[LinkScout] Deduplication: Analyzing ${allRecords.length} records...`);
+
+    // Group records by normalized URL
+    const groups = new Map();
+    for (const record of allRecords) {
+      const normalizedUrl = normalizeUrl(record.url);
+      if (!groups.has(normalizedUrl)) {
+        groups.set(normalizedUrl, []);
+      }
+      groups.get(normalizedUrl).push(record);
+    }
+
+    let removedCount = 0;
+    let updatedCount = 0;
+    const duplicateGroups = [...groups.entries()].filter(([, g]) => g.length > 1);
+
+    console.log(`[LinkScout] Found ${duplicateGroups.length} groups with duplicates`);
+
+    for (const [normalizedUrl, records] of duplicateGroups) {
+      // Sort by createdAt ascending — keep the oldest
+      records.sort((a, b) => a.createdAt - b.createdAt);
+      const duplicates = records.slice(1);
+
+      // Remove duplicate records and their Firefox bookmarks
+      for (const dup of duplicates) {
+        try {
+          // Remove from IndexedDB
+          await new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            const request = store.delete(dup.id);
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+          });
+
+          // Remove corresponding Firefox bookmark (only within its stored folder)
+          if (dup.folderId) {
+            try {
+              const children = await browser.bookmarks.getChildren(dup.folderId);
+              const bookmark = children.find(c => c.url === dup.url);
+              if (bookmark) {
+                await browser.bookmarks.remove(bookmark.id);
+              }
+            } catch (e) {
+              // Folder might not exist anymore, skip
+            }
+          }
+
+          removedCount++;
+          console.log(`[LinkScout] Removed duplicate: ${dup.url}`);
+        } catch (e) {
+          console.error('[LinkScout] Error removing duplicate:', e);
+        }
+
+        // Small delay to avoid blocking the browser
+        await delay(10);
+      }
+
+      // Update the kept record's URL to normalized version if it changed
+      const keepRecord = records[0];
+      if (keepRecord.url !== normalizedUrl) {
+        try {
+          await new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            const updatedRecord = {
+              ...keepRecord,
+              originalUrl: keepRecord.originalUrl || keepRecord.url,
+              url: normalizedUrl
+            };
+            store.put(updatedRecord);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+          });
+
+          // Also update the Firefox bookmark URL
+          if (keepRecord.folderId) {
+            try {
+              const children = await browser.bookmarks.getChildren(keepRecord.folderId);
+              const bookmark = children.find(c => c.url === keepRecord.url);
+              if (bookmark) {
+                await browser.bookmarks.update(bookmark.id, { url: normalizedUrl });
+              }
+            } catch (e) {
+              // Folder might not exist, skip
+            }
+          }
+
+          updatedCount++;
+        } catch (e) {
+          console.error('[LinkScout] Error updating record URL:', e);
+        }
+      }
+    }
+
+    console.log(`[LinkScout] Deduplication complete: ${removedCount} removed, ${updatedCount} updated out of ${allRecords.length} total`);
+    return { removed: removedCount, updated: updatedCount, total: allRecords.length };
+  } catch (error) {
+    console.error('[LinkScout] Deduplication error:', error);
+    return { removed: 0, updated: 0, error: error.message };
+  }
+}
+
+// Sync database on extension startup, then run deduplication in background
 syncDatabaseWithBookmarks().then(result => {
   console.log('Initial sync result:', result);
+  // Run deduplication asynchronously — does not block the browser
+  deduplicateExistingDatabase().then(dedupeResult => {
+    console.log('[LinkScout] Deduplication result:', dedupeResult);
+  });
 });
 
 
@@ -382,6 +510,46 @@ function extractDomain(url) {
 // Delay function for rate limiting
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Normalize URL by removing tracking parameters, fragments, and trailing slashes
+function normalizeUrl(url) {
+  try {
+    const urlObj = new URL(url);
+    const trackingParams = [
+      'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term',
+      'fbclid', 'gclid', 'dclid', 'msclkid', 'twclid',
+      'mc_cid', 'mc_eid', 'ref', '_ref', 'ref_', '_ga', '_gid',
+      'yclid', 'zanpid', 'igshid'
+    ];
+    trackingParams.forEach(p => urlObj.searchParams.delete(p));
+    urlObj.hash = '';
+    let normalized = urlObj.toString();
+    if (urlObj.pathname !== '/' && normalized.endsWith('/')) {
+      normalized = normalized.slice(0, -1);
+    }
+    return normalized;
+  } catch (e) {
+    return url;
+  }
+}
+
+// Resolve URL by following redirects via HEAD request (with timeout)
+// Falls back to normalizeUrl if the request fails
+async function resolveUrl(url) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(url, {
+      method: 'HEAD',
+      redirect: 'follow',
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return normalizeUrl(response.url);
+  } catch (error) {
+    return normalizeUrl(url);
+  }
 }
 
 async function findOrCreateFolder(parentId, title, index = undefined) {
@@ -422,27 +590,31 @@ async function findExistingBookmark(parentId, url) {
 }
 
 // Create or update bookmark, avoiding duplicates globally via IndexedDB
+// URLs are resolved (redirects followed) and normalized before duplicate check
 async function createOrUpdateBookmark(parentId, title, url, index = undefined, folderPath = '') {
-  // Check global duplicate via IndexedDB
-  const isGlobalDuplicate = await isLinkDuplicate(url);
+  const originalUrl = url;
+  // Resolve URL: follow redirects + normalize (remove tracking params, fragments)
+  const resolvedUrl = await resolveUrl(url);
+
+  // Check global duplicate via IndexedDB (using resolved URL)
+  const isGlobalDuplicate = await isLinkDuplicate(resolvedUrl);
   if (isGlobalDuplicate) {
     return { action: 'skipped', bookmark: null, reason: 'global_duplicate' };
   }
 
-  const existing = await findExistingBookmark(parentId, url);
-
+  const existing = await findExistingBookmark(parentId, resolvedUrl);
   if (existing) {
     return { action: 'skipped', bookmark: existing };
   }
 
-  const createOptions = { parentId, title, url };
+  const createOptions = { parentId, title, url: resolvedUrl };
   if (index !== undefined) {
     createOptions.index = index;
   }
   const newBookmark = await browser.bookmarks.create(createOptions);
 
   // Add to IndexedDB for global duplicate tracking with full metadata
-  await addLinkToDatabase(url, title, parentId, folderPath);
+  await addLinkToDatabase(resolvedUrl, title, parentId, folderPath, originalUrl);
 
   // Update folder timestamp
   await updateFolderTimestamp(parentId);

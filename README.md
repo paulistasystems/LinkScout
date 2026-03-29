@@ -17,7 +17,8 @@ LinkScout makes it easy to save and organize links from any webpage. Whether you
 
 **Smart organization:**
 - Links are automatically organized into folders based on the page title
-- Duplicate detection prevents saving the same link twice
+- Duplicate detection prevents saving the same link twice by following redirects (e.g., bit.ly -> original site)
+- Background deduplication of existing bookmarks to keep your collection clean
 - Option to show newest links/folders at the top
 
 ## Features
@@ -29,7 +30,8 @@ LinkScout makes it easy to save and organize links from any webpage. Whether you
 - 🗂️ **Sidebar Manager** - View, open, and manage bookmarks. Includes expand/collapse all, open all in tabs + auto-delete when opened
 - 📁 **Smart Organization** - Links saved under `LinkScout / [Page Title] / [Link]`
 - 📂 **Auto Subfolders** - When saving more than X links, automatically creates numbered subfolders (e.g., 1-10, 11-20)
-- 🔄 **Duplicate Detection** - Automatically detects and skips duplicate links globally using IndexedDB
+- 🔄 **Duplicate Detection** - Automatically detects and skips duplicate links globally using IndexedDB. Resolves redirects (following `bit.ly` or `t.co` links to their final destination) and normalizes URLs by removing tracking parameters.
+- 🧹 **Background Deduplication** - Automatically cleans up existing duplicate bookmarks in the background on startup without blocking the browser.
 - 🗑️ **Trash Management** - Opened links move to Trash automatically. Trash auto-empties after 30 days
 - ⚙️ **Configurable** - Choose bookmark location, folder name and more
 
@@ -55,11 +57,11 @@ LinkScout makes it easy to save and organize links from any webpage. Whether you
 
    Or manually create the zip:
    ```bash
-   zip -r linkscout-2.4.zip manifest.json background.js content.js options.html options.js sidebar/ icons/ -x "*.DS_Store"
+   zip -r LinkScout-2.6.11.zip manifest.json background.js content.js options.html options.js sidebar/ icons/ -x "*.DS_Store"
    ```
 
 3. **Output**
-   - The build creates `linkscout-2.4.zip` in the project root directory.
+   - The build creates `LinkScout-2.6.11.zip` in the project root directory.
 
 ### Project Structure
 
