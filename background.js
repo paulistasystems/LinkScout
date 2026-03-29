@@ -482,12 +482,132 @@ async function deduplicateExistingDatabase() {
   }
 }
 
+// Resolve missing redirect URLs in background
+async function resolveExistingLinksBackgroundJob() {
+  try {
+    const db = await openDatabase();
+
+    // Get all records
+    const allRecords = await new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => resolve([]);
+    });
+
+    if (allRecords.length === 0) {
+      console.log('[LinkScout] No links to resolve redirects');
+      return { checked: 0, updated: 0, removed: 0 };
+    }
+
+    console.log(`[LinkScout] URL Resolver: Analyzing ${allRecords.length} records in background...`);
+
+    let checkedCount = 0;
+    let updatedCount = 0;
+    let removedCount = 0;
+
+    for (const record of allRecords) {
+      // Small delay to avoid blocking the browser and hitting rate limits quickly
+      await delay(250);
+
+      const resolvedUrl = await resolveUrl(record.url);
+      checkedCount++;
+
+      // If URL was shortened/redirected and resolved to a different destination
+      if (resolvedUrl !== record.url) {
+        console.log(`[LinkScout] URL Resolver: Redirect found from ${record.url.substring(0,40)}... to ${resolvedUrl.substring(0,40)}...`);
+
+        // Check if the new resolved URL is a duplicate of ANOTHER link already in DB
+        const isDuplicate = await isLinkDuplicate(resolvedUrl);
+
+        if (isDuplicate) {
+          // This resolved link already exists elsewhere! Delete this record and its bookmark
+          try {
+            // Remove from IndexedDB
+            await new Promise((resolve, reject) => {
+              const tx = db.transaction(STORE_NAME, 'readwrite');
+              const store = tx.objectStore(STORE_NAME);
+              const request = store.delete(record.id);
+              request.onsuccess = () => resolve();
+              request.onerror = () => reject(request.error);
+            });
+
+            // Remove corresponding Firefox bookmark
+            if (record.folderId) {
+              try {
+                const children = await browser.bookmarks.getChildren(record.folderId);
+                const bookmark = children.find(c => c.url === record.url);
+                if (bookmark) {
+                  await browser.bookmarks.remove(bookmark.id);
+                }
+              } catch (e) {
+                // Ignore folder errors
+              }
+            }
+
+            removedCount++;
+            console.log(`[LinkScout] URL Resolver: Removed duplicate after resolving: ${resolvedUrl}`);
+          } catch (e) {
+            console.error('[LinkScout] URL Resolver: Error removing resolved duplicate:', e);
+          }
+        } else {
+          // No duplicate found. Keep the record, but update its URL to the resolved one
+          try {
+            await new Promise((resolve, reject) => {
+              const tx = db.transaction(STORE_NAME, 'readwrite');
+              const store = tx.objectStore(STORE_NAME);
+              const updatedRecord = {
+                ...record,
+                originalUrl: record.originalUrl || record.url,
+                url: resolvedUrl
+              };
+              const request = store.put(updatedRecord);
+              request.onsuccess = () => resolve();
+              request.onerror = () => reject(request.error);
+            });
+
+            // Update Firefox bookmark URL
+            if (record.folderId) {
+              try {
+                const children = await browser.bookmarks.getChildren(record.folderId);
+                const bookmark = children.find(c => c.url === record.url);
+                if (bookmark) {
+                  await browser.bookmarks.update(bookmark.id, { url: resolvedUrl });
+                }
+              } catch (e) {
+                // Ignore folder errors
+              }
+            }
+
+            updatedCount++;
+            console.log(`[LinkScout] URL Resolver: Updated bookmark URL to ${resolvedUrl}`);
+          } catch (e) {
+            console.error('[LinkScout] URL Resolver: Error updating resolved bookmark URL:', e);
+          }
+        }
+      }
+    }
+
+    console.log(`[LinkScout] URL Resolver complete: ${checkedCount} checked, ${updatedCount} updated, ${removedCount} duplicates removed.`);
+    return { checked: checkedCount, updated: updatedCount, removed: removedCount };
+  } catch (error) {
+    console.error('[LinkScout] URL Resolver error:', error);
+    return { error: error.message };
+  }
+}
+
 // Sync database on extension startup, then run deduplication in background
 syncDatabaseWithBookmarks().then(result => {
   console.log('Initial sync result:', result);
   // Run deduplication asynchronously — does not block the browser
   deduplicateExistingDatabase().then(dedupeResult => {
     console.log('[LinkScout] Deduplication result:', dedupeResult);
+    
+    // Run URL resolver to fetch real destinations for existing shortlinks
+    resolveExistingLinksBackgroundJob().then(resolveResult => {
+      console.log('[LinkScout] URL Resolver result:', resolveResult);
+    });
   });
 });
 
