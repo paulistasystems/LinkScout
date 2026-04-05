@@ -831,10 +831,79 @@ async function runBackgroundVerification() {
   }
 }
 
+// Disaster recovery: restore bookmarks from IndexedDB if Firefox tree is empty
+async function restoreBookmarksFromDB() {
+  try {
+    const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
+    let parentId = settings.bookmarkLocation || 'toolbar_____';
+    try { await browser.bookmarks.getChildren(parentId); } catch(e) { parentId = 'toolbar_____'; }
+
+    const children = await browser.bookmarks.getChildren(parentId);
+    const rootFolderName = settings.rootFolder || 'LinkScout';
+    const linkScoutFolder = children.find(child => child.title === rootFolderName && !child.url);
+
+    if (linkScoutFolder) {
+      const allBms = await collectBookmarksFromFolder(linkScoutFolder.id, rootFolderName);
+      if (allBms.length > 0) return; // Not empty, no need to restore
+    }
+
+    const db = await openDatabase();
+    const allRecords = await new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => resolve([]);
+    });
+
+    if (allRecords.length === 0) return; // DB is empty too
+
+    console.log('[LinkScout] Iniciando restauração de emergência! Restabelecendo', allRecords.length, 'links do IndexedDB para o Firefox.');
+
+    const root = await findOrCreateFolder(parentId, rootFolderName);
+    
+    // Group records by folderPath
+    const recordsByPath = {};
+    for (const rec of allRecords) {
+       const path = rec.folderPath || rootFolderName;
+       if (!recordsByPath[path]) recordsByPath[path] = [];
+       recordsByPath[path].push(rec);
+    }
+
+    for (const [path, recs] of Object.entries(recordsByPath)) {
+       const parts = path.split('/');
+       let currentParentId = root.id;
+       let startIndex = parts[0] === rootFolderName ? 1 : 0;
+       
+       for (let i = startIndex; i < parts.length; i++) {
+          if (!parts[i]) continue;
+          const folder = await findOrCreateFolder(currentParentId, parts[i]);
+          currentParentId = folder.id;
+       }
+
+       for (const rec of recs) {
+          try {
+             await browser.bookmarks.create({
+                parentId: currentParentId,
+                title: rec.title || rec.url,
+                url: rec.url
+             });
+          } catch(e) {}
+       }
+    }
+    
+    console.log('[LinkScout] Restauração de emergência concluída.');
+  } catch (e) {
+    console.error('[LinkScout] Erro na restauração:', e);
+  }
+}
+
 // Sync database on extension startup, then run deduplication in background
-syncDatabaseWithBookmarks().then(result => {
-  console.log('Initial sync result:', result);
-  runBackgroundVerification();
+restoreBookmarksFromDB().then(() => {
+  syncDatabaseWithBookmarks().then(result => {
+    console.log('Initial sync result:', result);
+    runBackgroundVerification();
+  });
 });
 
 
