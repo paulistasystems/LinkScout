@@ -77,6 +77,52 @@ async function loadBookmarks() {
     showLoading(false);
 }
 
+let pendingReload = null;
+
+function requestSilentReload() {
+    if (pendingReload) clearTimeout(pendingReload);
+    pendingReload = setTimeout(() => {
+        silentLoadBookmarks();
+    }, 500);
+}
+
+if (browser.bookmarks) {
+    if (browser.bookmarks.onCreated) browser.bookmarks.onCreated.addListener(requestSilentReload);
+    if (browser.bookmarks.onRemoved) browser.bookmarks.onRemoved.addListener(requestSilentReload);
+    if (browser.bookmarks.onChanged) browser.bookmarks.onChanged.addListener(requestSilentReload);
+    if (browser.bookmarks.onMoved) browser.bookmarks.onMoved.addListener(requestSilentReload);
+}
+
+async function silentLoadBookmarks() {
+    try {
+        const scrollPos = bookmarkTreeEl.scrollTop;
+        const expandedFolders = Array.from(bookmarkTreeEl.querySelectorAll('.folder:not(.collapsed)')).map(f => f.dataset.id);
+
+        const result = await browser.runtime.sendMessage({ action: 'getBookmarkTree' });
+
+        if (result.error) {
+            console.error('Error in silent reload:', result.error);
+            return;
+        }
+
+        linkscoutFolderId = result.linkscoutFolderId;
+        allBookmarksData = result.bookmarks;
+        linksPerFolder = result.linksPerFolder || 10;
+
+        renderBookmarkTree();
+
+        Array.from(bookmarkTreeEl.querySelectorAll('.folder')).forEach(f => {
+            if (expandedFolders.includes(f.dataset.id)) {
+                f.classList.remove('collapsed');
+            }
+        });
+
+        bookmarkTreeEl.scrollTop = scrollPos;
+    } catch (error) {
+        console.error('Error reloading silently:', error);
+    }
+}
+
 function showLoading(show) {
     loadingStateEl.style.display = show ? 'flex' : 'none';
     if (show) {
@@ -312,14 +358,59 @@ function countBookmarks(folder) {
     return count;
 }
 
-async function openAndTrash(bookmarkId) {
+function removeElementAndUpdateCounts(elementSelector, isFolder = false) {
+    const el = document.querySelector(elementSelector);
+    if (!el) return;
+
+    const removedCount = isFolder ? el.querySelectorAll('.bookmark-item').length : 1;
+
+    let current = el.parentElement;
+    const ancestorFolders = [];
+    while (current) {
+        const ancestor = current.closest('.folder');
+        if (ancestor) {
+            ancestorFolders.push(ancestor);
+            current = ancestor.parentElement;
+        } else {
+            break;
+        }
+    }
+
+    el.remove();
+
+    ancestorFolders.forEach(ancestorEl => {
+        const header = Array.from(ancestorEl.children).find(c => c.classList.contains('folder-header'));
+        if (header) {
+            const countSpan = header.querySelector('.folder-count');
+            if (countSpan) {
+                const count = parseInt(countSpan.textContent, 10);
+                if (!isNaN(count) && count > 0) {
+                    const newCount = Math.max(0, count - removedCount);
+                    countSpan.textContent = newCount;
+                    if (newCount === 0) {
+                        ancestorEl.style.display = 'none';
+                    }
+                }
+            }
+        }
+    });
+
+    const remaining = document.querySelectorAll('.bookmark-item');
+    if (remaining.length === 0) {
+        showEmpty(true);
+    }
+}
+
+async function openAndTrash(bookmarkId, skipDOMRemove = false) {
     try {
         await browser.runtime.sendMessage({
             action: 'openAndTrash',
             bookmarkId
         });
-        // Reload to reflect changes
-        loadBookmarks();
+        
+        if (!skipDOMRemove) {
+            removeElementAndUpdateCounts(`.bookmark-item[data-id="${bookmarkId}"]`, false);
+        }
     } catch (error) {
         console.error('Error opening bookmark:', error);
     }
@@ -331,8 +422,8 @@ async function openAllInFolder(folderId) {
             action: 'openAllInFolder',
             folderId
         });
-        if (result.count > 0) {
-            loadBookmarks();
+        if (result && result.count > 0) {
+            removeElementAndUpdateCounts(`.folder[data-id="${folderId}"]`, true);
         }
     } catch (error) {
         console.error('Error opening all bookmarks:', error);
@@ -345,7 +436,7 @@ async function deleteFolder(folderId) {
             action: 'deleteFolder',
             folderId
         });
-        loadBookmarks();
+        removeElementAndUpdateCounts(`.folder[data-id="${folderId}"]`, true);
     } catch (error) {
         console.error('Error deleting folder:', error);
     }
@@ -368,8 +459,9 @@ function collectIdsFromVirtualFolder(folder) {
 async function openAllInVirtualFolder(folder) {
     const ids = collectIdsFromVirtualFolder(folder);
     for (const id of ids) {
-        await openAndTrash(id);
+        await openAndTrash(id, true);
     }
+    removeElementAndUpdateCounts(`.folder[data-id="${folder.id}"]`, true);
 }
 
 async function deleteVirtualFolder(folder) {
@@ -379,7 +471,7 @@ async function deleteVirtualFolder(folder) {
             await browser.runtime.sendMessage({ action: 'deleteBookmark', bookmarkId: id });
         } catch (e) { /* ignore */ }
     }
-    loadBookmarks();
+    removeElementAndUpdateCounts(`.folder[data-id="${folder.id}"]`, true);
 }
 
 
