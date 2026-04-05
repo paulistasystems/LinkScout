@@ -18,9 +18,6 @@ async function loadSettings() {
         document.getElementById('bookmarkLocation').value = settings.bookmarkLocation;
         document.getElementById('linksPerFolder').value = settings.linksPerFolder;
         document.getElementById('resolveBatchSize').value = settings.resolveBatchSize || 10;
-        if (settings.aggregatorDomains) {
-            document.getElementById('aggregatorDomains').value = settings.aggregatorDomains.join('\n');
-        }
 
         console.log('Settings loaded:', settings);
     } catch (error) {
@@ -33,17 +30,12 @@ async function loadSettings() {
 async function saveSettings() {
     const linksPerFolder = parseInt(document.getElementById('linksPerFolder').value, 10);
     const resolveBatchSize = parseInt(document.getElementById('resolveBatchSize').value, 10);
-    const aggregatorText = document.getElementById('aggregatorDomains').value;
-    const customAggregatorDomains = aggregatorText.split('\n')
-        .map(domain => domain.trim())
-        .filter(domain => domain.length > 0);
 
     const newSettings = {
         rootFolder: document.getElementById('rootFolder').value.trim() || 'LinkScout',
         bookmarkLocation: document.getElementById('bookmarkLocation').value,
         linksPerFolder: linksPerFolder > 0 ? linksPerFolder : 10,
-        resolveBatchSize: resolveBatchSize > 0 ? resolveBatchSize : 10,
-        aggregatorDomains: customAggregatorDomains
+        resolveBatchSize: resolveBatchSize > 0 ? resolveBatchSize : 10
     };
 
     try {

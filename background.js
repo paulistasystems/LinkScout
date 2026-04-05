@@ -649,13 +649,13 @@ async function resolveExistingLinksBackgroundJob() {
     let recordsToProcess = [];
     for (const record of allRecords) {
       // Auto-rescue da falha anterior: se for um artigo do Google e foi marcado como insolúvel, limpe a flag!
-      if (record.unresolvable && record.url.includes('news.google.com') && !record.url.includes('/stories/') && !record.url.includes('/topics/')) {
+      if (record.unresolvable && record.url.includes('news.google.com') && !record.url.includes('/stories/') && !record.url.includes('/topics/') && !record.url.includes('/publication/')) {
          record.unresolvable = false;
          record.redirectResolved = false;
       }
       
       // Auto-exclusão irreversível de Hub pages
-      if (record.url.includes('news.google.com') && (record.url.includes('/stories/') || record.url.includes('/topics/'))) {
+      if (record.url.includes('news.google.com') && (record.url.includes('/stories/') || record.url.includes('/topics/') || record.url.includes('/publication/'))) {
          record.deleteImmediately = true;
          recordsToProcess.push(record);
          continue;
@@ -665,7 +665,8 @@ async function resolveExistingLinksBackgroundJob() {
                            record.url.includes('news.google.com') ||
                            record.url.includes('google.com/url')) && 
                            !record.url.includes('/stories/') && 
-                           !record.url.includes('/topics/');
+                           !record.url.includes('/topics/') &&
+                           !record.url.includes('/publication/');
                            
       if (record.redirectResolved && isAggregator && !record.unresolvable) {
         console.log(`🔔 [LinkScout] URL Resolver: ${record.url} estava na fila de prontos, mas era agregador! Retornando pra fila de avaliação de segurança...`);
@@ -1152,7 +1153,8 @@ async function resolveUrl(url, depth = 0) {
                        url.includes('news.google.com') ||
                        url.includes('google.com/url')) &&
                        !url.includes('/stories/') &&
-                       !url.includes('/topics/');
+                       !url.includes('/topics/') &&
+                       !url.includes('/publication/');
 
   // Usar Aba Fantasma para links agregadores que podem rodar via Javascript ou bloquear HEAD
   if (isAggregator) {
