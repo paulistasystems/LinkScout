@@ -337,22 +337,24 @@ async function syncDatabaseWithBookmarks() {
     let synced = 0;
     let skipped = 0;
     let purgedClones = 0;
+    const seenUrls = new Set();
 
     for (const bookmark of allBookmarks) {
-      const added = await addLinkToDatabase(bookmark.url, bookmark.title, bookmark.folderId, bookmark.folderPath);
-      if (added) {
-        synced++;
-      } else {
-        // Já existe na base de dados (chave única url rejeitou).
-        // Isso significa que é um clone puro no navegador. Vamos destruir no Firefox também!
+      if (seenUrls.has(bookmark.url)) {
+        // It's a duplicate inside Firefox
         try {
-          const globalDuplicate = await isLinkDuplicate(bookmark.url);
-          if (globalDuplicate) {
-            await browser.bookmarks.remove(bookmark.id);
-            purgedClones++;
-          }
+          await browser.bookmarks.remove(bookmark.id);
+          purgedClones++;
         } catch (e) {}
-        skipped++; // Already exists
+      } else {
+        seenUrls.add(bookmark.url);
+        // Safely attempt to add to IndexedDB
+        const added = await addLinkToDatabase(bookmark.url, bookmark.title, bookmark.folderId, bookmark.folderPath);
+        if (added) {
+          synced++;
+        } else {
+          skipped++; // Already exists in IDB, but it's the primary one in Firefox
+        }
       }
     }
 
