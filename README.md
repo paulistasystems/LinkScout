@@ -53,11 +53,11 @@ LinkScout makes it easy to save and organize links from any webpage. Whether you
 
 2. **Create the zip archive**
    ```bash
-   zip -r LinkScout-v2.7.7.zip manifest.json background.js content.js options.html options.js sidebar/ icons/ -x "*.DS_Store"
+   zip -r LinkScout-v2.7.8.zip manifest.json background.js content.js options.html options.js sidebar/ icons/ -x "*.DS_Store"
    ```
 
 3. **Output**
-   - This creates `LinkScout-v2.7.7.zip` in the project root directory.
+   - This creates `LinkScout-v2.7.8.zip` in the project root directory.
 
 ### Project Structure
 
