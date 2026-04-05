@@ -703,7 +703,15 @@ async function resolveExistingLinksBackgroundJob() {
         }
       });
 
-      await Promise.all(batchPromises);
+      try {
+        await Promise.race([
+          Promise.all(batchPromises),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('BatchTimeout: As resoluções travaram ou demoraram demais.')), 25000))
+        ]);
+      } catch (batchError) {
+        console.error(`🚨 [LinkScout] Lote ${Math.floor(i / batchSize) + 1} sofreu um erro crítico e foi interrompido à força:`, batchError.message);
+      }
+      
       await delay(1200); // Generous cooldown between batches so host machine breathes
     }
 
@@ -945,13 +953,20 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
 
 // Resolve URL by following redirects via HEAD request (with timeout)
 // Falls back to normalizeUrl if the request fails
-async function resolveUrl(url) {
+async function resolveUrl(url, depth = 0) {
+  if (depth > 10) {
+    console.warn(`[LinkScout] resolveUrl: Limite de recursão alcançado para ${url}`);
+    return url;
+  }
+  
   // Try static extraction first to bypass warning pages and save time (Facebook, Reddit, YT, Google tracking)
   const extractResult = extractTargetFromRedirectUrl(url);
-  if (extractResult) {
+  if (extractResult && extractResult !== url) {
     console.log(`[LinkScout] resolveUrl: Extração direta bem-sucedida do ofuscador para ${url} -> ${extractResult}`);
     // Recurse to handle chained redirects!
-    return resolveUrl(extractResult);
+    return resolveUrl(extractResult, depth + 1);
+  } else if (extractResult === url) {
+    return url;
   }
 
   const settings = await ensureMigratedSettings();
