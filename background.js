@@ -1489,47 +1489,19 @@ async function saveAllTabsAndClose() {
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const year = now.getFullYear();
     const sessionName = `${weekday} - ${day}/${month}/${year}`;
+    
+    // Check if session folder already exists
+    const existingChildren = await browser.bookmarks.getChildren(linkScoutFolder.id);
+    const existingSessionFolder = existingChildren.find(child => child.title === sessionName && !child.url);
+    const folderAlreadyExists = !!existingSessionFolder;
+
     const sessionFolder = await findOrCreateFolder(linkScoutFolder.id, sessionName, 0);
 
     // Create bookmarks with subfolder logic
-    const linksPerFolder = settings.linksPerFolder || 10;
-    const needsSubfolders = validTabs.length > linksPerFolder;
+    const linksPerFolder = parseInt(settings.linksPerFolder, 10) || 10;
 
-    if (needsSubfolders) {
-      // Split tabs into chunks and create subfolders
-      const chunks = [];
-      for (let i = 0; i < validTabs.length; i += linksPerFolder) {
-        chunks.push(validTabs.slice(i, i + linksPerFolder));
-      }
-
-      for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
-        const chunk = chunks[chunkIndex];
-        const startNum = chunkIndex * linksPerFolder + 1;
-        const endNum = startNum + chunk.length - 1;
-        const folderName = `${startNum}-${endNum}`;
-        const subFolder = await findOrCreateFolder(sessionFolder.id, folderName);
-
-        const subFolderPath = `${rootFolderName}/${sessionName}/${folderName}`;
-        for (const tab of chunk) {
-          try {
-            const result = await createOrUpdateBookmark(
-              subFolder.id,
-              tab.title || tab.url,
-              tab.url,
-              undefined,
-              subFolderPath,
-              true // skipResolve = true
-            );
-            if (result.action === 'created') successCount++;
-            else if (result.action === 'skipped') skippedCount++;
-            else if (result.action === 'updated') updatedCount++;
-          } catch (error) {
-            failCount++;
-          }
-        }
-      }
-    } else {
-      // Create bookmarks directly in session folder
+    if (folderAlreadyExists) {
+      // Add all new tabs directly to the folder and then reorganize
       const sessionFolderPath = `${rootFolderName}/${sessionName}`;
       for (const tab of validTabs) {
         try {
@@ -1546,6 +1518,66 @@ async function saveAllTabsAndClose() {
           else if (result.action === 'updated') updatedCount++;
         } catch (error) {
           failCount++;
+        }
+      }
+
+      // Reorganize the folder to maintain proper subfolder structure
+      await reorganizePageFolder(sessionFolder.id, linksPerFolder);
+    } else {
+      const needsSubfolders = validTabs.length > linksPerFolder;
+
+      if (needsSubfolders) {
+        // Split tabs into chunks and create subfolders
+        const chunks = [];
+        for (let i = 0; i < validTabs.length; i += linksPerFolder) {
+          chunks.push(validTabs.slice(i, i + linksPerFolder));
+        }
+
+        for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+          const chunk = chunks[chunkIndex];
+          const startNum = chunkIndex * linksPerFolder + 1;
+          const endNum = startNum + chunk.length - 1;
+          const folderName = `${startNum}-${endNum}`;
+          const subFolder = await findOrCreateFolder(sessionFolder.id, folderName);
+
+          const subFolderPath = `${rootFolderName}/${sessionName}/${folderName}`;
+          for (const tab of chunk) {
+            try {
+              const result = await createOrUpdateBookmark(
+                subFolder.id,
+                tab.title || tab.url,
+                tab.url,
+                undefined,
+                subFolderPath,
+                true // skipResolve = true
+              );
+              if (result.action === 'created') successCount++;
+              else if (result.action === 'skipped') skippedCount++;
+              else if (result.action === 'updated') updatedCount++;
+            } catch (error) {
+              failCount++;
+            }
+          }
+        }
+      } else {
+        // Create bookmarks directly in session folder
+        const sessionFolderPath = `${rootFolderName}/${sessionName}`;
+        for (const tab of validTabs) {
+          try {
+            const result = await createOrUpdateBookmark(
+              sessionFolder.id,
+              tab.title || tab.url,
+              tab.url,
+              0,
+              sessionFolderPath,
+              true // skipResolve = true
+            );
+            if (result.action === 'created') successCount++;
+            else if (result.action === 'skipped') skippedCount++;
+            else if (result.action === 'updated') updatedCount++;
+          } catch (error) {
+            failCount++;
+          }
         }
       }
     }
