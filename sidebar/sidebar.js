@@ -87,10 +87,147 @@ function requestSilentReload() {
 }
 
 if (browser.bookmarks) {
-    if (browser.bookmarks.onCreated) browser.bookmarks.onCreated.addListener(requestSilentReload);
-    if (browser.bookmarks.onRemoved) browser.bookmarks.onRemoved.addListener(requestSilentReload);
+    if (browser.bookmarks.onCreated) browser.bookmarks.onCreated.addListener((id, bookmark) => {
+        handleBookmarkCreated(id, bookmark);
+    });
+    if (browser.bookmarks.onRemoved) browser.bookmarks.onRemoved.addListener((id, removeInfo) => {
+        handleBookmarkRemoved(id, removeInfo);
+    });
     if (browser.bookmarks.onChanged) browser.bookmarks.onChanged.addListener(requestSilentReload);
     if (browser.bookmarks.onMoved) browser.bookmarks.onMoved.addListener(requestSilentReload);
+}
+
+function handleBookmarkCreated(id, bookmark) {
+    if (!bookmark.url) {
+        requestSilentReload();
+        return;
+    }
+
+    function findAndAdd(nodes) {
+        for (let node of nodes) {
+            if (node.id === bookmark.parentId) {
+                if (!node.children) node.children = [];
+                node.children.push({
+                    type: 'bookmark',
+                    id: bookmark.id,
+                    url: bookmark.url,
+                    title: bookmark.title || bookmark.url,
+                    dateAdded: bookmark.dateAdded || Date.now()
+                });
+                return true;
+            }
+            if (node.type === 'folder' && node.children) {
+                if (findAndAdd(node.children)) return true;
+            }
+        }
+        return false;
+    }
+
+    if (bookmark.parentId === linkscoutFolderId) {
+        if (!allBookmarksData) allBookmarksData = [];
+        allBookmarksData.push({
+            type: 'bookmark',
+            id: bookmark.id,
+            url: bookmark.url,
+            title: bookmark.title || bookmark.url,
+            dateAdded: bookmark.dateAdded || Date.now()
+        });
+    } else {
+        if (allBookmarksData) findAndAdd(allBookmarksData);
+    }
+
+    if (groupByDomain || searchQuery) {
+        requestSilentReload();
+        return;
+    }
+
+    let targetContainer = null;
+    let targetFolderEl = null;
+
+    if (bookmark.parentId === linkscoutFolderId) {
+        targetContainer = bookmarkTreeEl;
+    } else {
+        targetFolderEl = document.querySelector(`.folder[data-id="${bookmark.parentId}"]`);
+        if (!targetFolderEl) {
+            requestSilentReload();
+            return;
+        }
+        targetFolderEl.style.display = 'block';
+        
+        targetContainer = targetFolderEl.querySelector('.folder-content');
+        if (!targetContainer) {
+            targetContainer = document.createElement('div');
+            targetContainer.className = 'folder-content';
+            targetFolderEl.appendChild(targetContainer);
+        }
+    }
+
+    const bookmarkEl = createBookmarkElement({
+        id: bookmark.id,
+        url: bookmark.url,
+        title: bookmark.title || bookmark.url
+    });
+
+    const existingBookmarks = Array.from(targetContainer.querySelectorAll('.bookmark-item'));
+    if (currentSortOrder === 'desc') {
+        if (existingBookmarks.length > 0) {
+            targetContainer.insertBefore(bookmarkEl, existingBookmarks[0]);
+        } else {
+            targetContainer.appendChild(bookmarkEl);
+        }
+    } else {
+        targetContainer.appendChild(bookmarkEl);
+    }
+
+    if (targetFolderEl) {
+        let current = targetFolderEl;
+        while (current && current.classList.contains('folder')) {
+            current.style.display = 'block';
+            const header = Array.from(current.children).find(c => c.classList.contains('folder-header'));
+            if (header) {
+                const countSpan = header.querySelector('.folder-count');
+                if (countSpan) {
+                    const count = parseInt(countSpan.textContent, 10);
+                    if (!isNaN(count)) countSpan.textContent = count + 1;
+                }
+            }
+            if (current.parentElement) {
+                current = current.parentElement.closest('.folder');
+            } else {
+                break;
+            }
+        }
+    }
+
+    showEmpty(false);
+}
+
+function handleBookmarkRemoved(id, removeInfo) {
+    const folderEl = document.querySelector(`.folder[data-id="${id}"]`);
+    if (folderEl) {
+        removeElementAndUpdateCounts(`.folder[data-id="${id}"]`, true);
+    } else {
+        const bookmarkEl = document.querySelector(`.bookmark-item[data-id="${id}"]`);
+        if (bookmarkEl) {
+            removeElementAndUpdateCounts(`.bookmark-item[data-id="${id}"]`, false);
+        }
+    }
+
+    function findAndRemove(nodes) {
+        if (!nodes) return false;
+        for (let i = 0; i < nodes.length; i++) {
+            let node = nodes[i];
+            if (node.id === id) {
+                nodes.splice(i, 1);
+                return true;
+            }
+            if (node.type === 'folder' && node.children) {
+                if (findAndRemove(node.children)) return true;
+            }
+        }
+        return false;
+    }
+    findAndRemove(allBookmarksData);
 }
 
 async function silentLoadBookmarks() {

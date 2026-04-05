@@ -456,7 +456,50 @@ browser.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
 
   // Update parent folder timestamp
   await updateFolderTimestamp(removeInfo.parentId);
+
+  // Run background verification to check for unresolvable links again and dedup
+  runBackgroundVerification();
 });
+
+// Listen for new bookmark creations (or folders)
+browser.bookmarks.onCreated.addListener(async (id, bookmark) => {
+  console.log('[LinkScout] Novo favorito ou pasta detectado. Sincronizando e agendando verificação background...');
+  await updateFolderTimestamp(bookmark.parentId);
+  await syncDatabaseWithBookmarks();
+  runBackgroundVerification();
+});
+
+// Listen for bookmark changes (e.g. title or url changed natively in Firefox)
+browser.bookmarks.onChanged.addListener(async (id, changeInfo) => {
+  console.log('[LinkScout] Alteração de favorito detectada. Sincronizando e agendando verificação background...');
+  
+  // We don't get parentId directly in changeInfo for onChanged, but we want to sync
+  // Assuming the user might edit it via our UI or natively.
+  // We can fetch the bookmark to update timestamp
+  try {
+    const results = await browser.bookmarks.get(id);
+    if (results && results.length > 0) {
+      await updateFolderTimestamp(results[0].parentId);
+    }
+  } catch(e) {}
+  
+  await syncDatabaseWithBookmarks();
+  runBackgroundVerification();
+});
+
+// Listen for bookmark moves (from one folder to another, or changing index)
+browser.bookmarks.onMoved.addListener(async (id, moveInfo) => {
+  console.log('[LinkScout] Movimentação de favorito detectada. Sincronizando e agendando verificação background...');
+  
+  // Update both the old parent and the new parent timestamps
+  await updateFolderTimestamp(moveInfo.oldParentId);
+  await updateFolderTimestamp(moveInfo.parentId);
+  
+  // A structural move might duplicate/change paths so we'll run the sync
+  await syncDatabaseWithBookmarks();
+  runBackgroundVerification();
+});
+
 
 // Deduplicate existing database records by normalizing URLs
 // Runs asynchronously in background to avoid blocking the browser
@@ -761,18 +804,35 @@ async function resolveExistingLinksBackgroundJob() {
   }
 }
 
-// Sync database on extension startup, then run deduplication in background
-syncDatabaseWithBookmarks().then(result => {
-  console.log('Initial sync result:', result);
-  // Run deduplication asynchronously — does not block the browser
-  deduplicateExistingDatabase().then(dedupeResult => {
+let isBackgroundJobRunning = false;
+
+async function runBackgroundVerification() {
+  if (isBackgroundJobRunning) {
+    console.log('[LinkScout] Processo em background já está rodando. Ignorando novo disparo.');
+    return;
+  }
+  
+  isBackgroundJobRunning = true;
+  console.log('[LinkScout] Iniciando processo de verificação em background...');
+  try {
+    const dedupeResult = await deduplicateExistingDatabase();
     console.log('[LinkScout] Deduplication result:', dedupeResult);
     
     // Run URL resolver to fetch real destinations for existing shortlinks
-    resolveExistingLinksBackgroundJob().then(resolveResult => {
-      console.log('[LinkScout] URL Resolver result:', resolveResult);
-    });
-  });
+    const resolveResult = await resolveExistingLinksBackgroundJob();
+    console.log('[LinkScout] URL Resolver result:', resolveResult);
+  } catch (error) {
+    console.error('[LinkScout] Erro na verificação em background:', error);
+  } finally {
+    isBackgroundJobRunning = false;
+    console.log('[LinkScout] Processo de verificação em background finalizado.');
+  }
+}
+
+// Sync database on extension startup, then run deduplication in background
+syncDatabaseWithBookmarks().then(result => {
+  console.log('Initial sync result:', result);
+  runBackgroundVerification();
 });
 
 

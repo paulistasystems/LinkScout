@@ -32,6 +32,7 @@ LinkScout makes it easy to save and organize links from any webpage. Whether you
 - 📂 **Auto Subfolders** - When saving more than X links, automatically creates numbered subfolders (e.g., 1-10, 11-20)
 - 🔄 **Duplicate Detection** - Automatically detects and skips duplicate links globally using IndexedDB. Resolves redirects (following `bit.ly` or `t.co` links to their final destination) and normalizes URLs by removing tracking parameters.
 - 🧹 **Background Deduplication** - Automatically cleans up existing duplicate bookmarks in the background on startup without blocking the browser.
+- ⚡ **Real-time UI** - Sidebar tree updates instantly via DOM manipulation when links are added or removed, without full reloads or layout shifts.
 - 🗑️ **Trash Management** - Opened links move to Trash automatically. Trash auto-empties after 30 days
 - ⚙️ **Configurable** - Choose bookmark location, folder name and more
 
@@ -52,11 +53,11 @@ LinkScout makes it easy to save and organize links from any webpage. Whether you
 
 2. **Create the zip archive**
    ```bash
-   zip -r LinkScout-v2.7.0.zip manifest.json background.js content.js options.html options.js sidebar/ icons/ -x "*.DS_Store"
+   zip -r LinkScout-v2.7.5.zip manifest.json background.js content.js options.html options.js sidebar/ icons/ -x "*.DS_Store"
    ```
 
 3. **Output**
-   - This creates `LinkScout-v2.7.0.zip` in the project root directory.
+   - This creates `LinkScout-v2.7.5.zip` in the project root directory.
 
 ### Project Structure
 
