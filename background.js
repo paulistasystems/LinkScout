@@ -1688,7 +1688,6 @@ async function collectBookmarkIds(folderId) {
 }
 
 // Open all bookmarks in a folder and remove
-// Open all bookmarks in a folder and remove
 async function openAllInFolderAndRemove(folderId) {
   try {
     const bookmarkIds = await collectBookmarkIds(folderId);
@@ -1698,21 +1697,31 @@ async function openAllInFolderAndRemove(folderId) {
     const folders = await browser.bookmarks.get(folderId);
     const parentId = folders[0] ? folders[0].parentId : null;
 
+    // Use a single promise array for tabs.create to be fast
     for (const id of bookmarkIds) {
-      const result = await openAndRemove(id);
-      if (result.success) count++;
+       try {
+           const bms = await browser.bookmarks.get(id);
+           if (bms && bms.length > 0 && bms[0].url) {
+               // Fire tab creation without awaiting to make it instant
+               browser.tabs.create({ url: bms[0].url, active: false });
+               await browser.bookmarks.remove(id);
+               count++;
+           }
+       } catch (e) {
+           console.error('Error opening item:', e);
+       }
     }
 
     // Check if folder is empty and delete it if so
     const children = await browser.bookmarks.getChildren(folderId);
     if (children.length === 0) {
       await browser.bookmarks.remove(folderId);
-      // Folder deleted, update parent's timestamp (it was modified)
+      // Folder deleted, update parent's timestamp
       if (parentId) {
         await updateFolderTimestamp(parentId);
       }
     } else {
-      // Folder remains, update its own timestamp so it moves to top (links were removed)
+      // Folder remains, update its own timestamp
       await updateFolderTimestamp(folderId);
     }
 
@@ -1721,6 +1730,32 @@ async function openAllInFolderAndRemove(folderId) {
     console.error('Error opening all in folder:', error);
     return { success: false, count: 0, error: error.message };
   }
+}
+
+// Bulk open and trash
+async function openMultipleAndTrash(bookmarkIds) {
+    let count = 0;
+    let anyParentId = null;
+
+    for (const id of bookmarkIds) {
+       try {
+           const bms = await browser.bookmarks.get(id);
+           if (bms && bms.length > 0 && bms[0].url) {
+               anyParentId = bms[0].parentId;
+               browser.tabs.create({ url: bms[0].url, active: false });
+               await browser.bookmarks.remove(id);
+               count++;
+           }
+       } catch (e) {
+           console.error('Error opening item:', e);
+       }
+    }
+
+    if (anyParentId) {
+        await updateFolderTimestamp(anyParentId);
+    }
+    
+    return { success: true, count };
 }
 
 // Delete a folder and its contents
@@ -1869,6 +1904,10 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
 
   if (message.action === 'openAllInFolder') {
     return await openAllInFolderAndRemove(message.folderId);
+  }
+
+  if (message.action === 'openMultipleAndTrash') {
+    return await openMultipleAndTrash(message.bookmarkIds);
   }
 
   if (message.action === 'deleteFolder') {

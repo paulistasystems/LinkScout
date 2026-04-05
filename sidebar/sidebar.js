@@ -595,10 +595,17 @@ function collectIdsFromVirtualFolder(folder) {
 
 async function openAllInVirtualFolder(folder) {
     const ids = collectIdsFromVirtualFolder(folder);
-    for (const id of ids) {
-        await openAndTrash(id, true);
+    if (ids.length === 0) return;
+    
+    try {
+        await browser.runtime.sendMessage({
+            action: 'openMultipleAndTrash',
+            bookmarkIds: ids
+        });
+        removeElementAndUpdateCounts(`.folder[data-id="${folder.id}"]`, true);
+    } catch (e) {
+        console.error('Error opening all in virtual folder:', e);
     }
-    removeElementAndUpdateCounts(`.folder[data-id="${folder.id}"]`, true);
 }
 
 async function deleteVirtualFolder(folder) {
