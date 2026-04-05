@@ -1198,13 +1198,19 @@ async function resolveUrl(url, depth = 0) {
             // Se a URL final ainda é igual, tenta ler o corpo para HTML redirect tags
             if (finalUrl === url) {
                const text = await getResponse.text();
-               const metaMatch = text.match(/URL=['"]?(https?:\/\/[^'" >]+)['"]?/i);
+               
+               // Validação ultra restrita: apenas tag <meta http-equiv="refresh" ...>
+               const metaMatch = text.match(/<meta\s+[^>]*http-equiv=['"]?refresh['"]?[^>]*content=['"]?\d+;\s*url=['"]?(https?:\/\/[^'">\s]+)/i) 
+                              || text.match(/<meta\s+[^>]*content=['"]?\d+;\s*url=['"]?(https?:\/\/[^'">\s]+)[^>]*http-equiv=['"]?refresh['"]?/i);
                if (metaMatch && metaMatch[1]) {
                    finalUrl = metaMatch[1];
                } else {
-                   const jsMatch = text.match(/location\.replace\(['"]([^'"]+)['"]\)/);
-                   if (jsMatch && jsMatch[1]) {
-                       finalUrl = jsMatch[1].replace(/\\\//g, '/');
+                   // Validação restrita de JS comumente usado em anonimizadores puros
+                   if (text.includes("location.replace")) {
+                       const jsMatch = text.match(/location\.replace\(['"](https?:\/\/[^'"]+)['"]\)/);
+                       if (jsMatch && jsMatch[1]) {
+                           finalUrl = jsMatch[1].replace(/\\\//g, '/');
+                       }
                    }
                }
             }
