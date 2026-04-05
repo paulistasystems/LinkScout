@@ -591,6 +591,12 @@ async function resolveExistingLinksBackgroundJob() {
     // Filter out the records that need processing
     let recordsToProcess = [];
     for (const record of allRecords) {
+      // Auto-rescue da falha anterior: se for um artigo do Google e foi marcado como insolúvel, limpe a flag!
+      if (record.unresolvable && record.url.includes('news.google.com') && !record.url.includes('/stories/') && !record.url.includes('/topics/')) {
+         record.unresolvable = false;
+         record.redirectResolved = false;
+      }
+      
       const isAggregator = (aggregatorDomains.some(domain => record.url.includes(domain)) ||
                            record.url.includes('news.google.com') ||
                            record.url.includes('google.com/url')) && 
