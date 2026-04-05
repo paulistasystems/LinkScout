@@ -54,13 +54,18 @@ const DEFAULT_SETTINGS = {
 // Auto-migrate user settings to ensure new tracking domains are covered
 async function ensureMigratedSettings() {
   const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
-  let domains = settings.aggregatorDomains;
+  let domains = settings.aggregatorDomains || [];
   let changed = false;
   
+  // Clean up pure redirectors from the list because they resolve much faster and robustly via HEAD request natively
+  const pureRedirects = ['t.co', 't.co/', 'bit.ly', 'bit.ly/', 'tinyurl.com', 'tinyurl.com/', 'lnkd.in', 'lnkd.in/', 'news.google.com', 'google.com/url'];
+  const oldLength = domains.length;
+  domains = domains.filter(d => !pureRedirects.includes(d));
+  if (domains.length !== oldLength) changed = true;
+
   // Start with default recommended domains if empty
   if (domains.length === 0) {
     domains = [
-      'news.google.com', 'google.com/url', 't.co', 'bit.ly', 'tinyurl.com', 'lnkd.in', 
       'l.facebook.com', 'm.facebook.com', 'facebook.com/l.php', 'l.messenger.com', 'out.reddit.com',
       'youtube.com/redirect'
     ];
@@ -71,10 +76,6 @@ async function ensureMigratedSettings() {
   const facebookMigrations = [
     {old: 'l.facebook.com/', new: 'l.facebook.com'},
     {old: 'l.messenger.com/', new: 'l.messenger.com'},
-    {old: 't.co/', new: 't.co'},
-    {old: 'bit.ly/', new: 'bit.ly'},
-    {old: 'tinyurl.com/', new: 'tinyurl.com'},
-    {old: 'lnkd.in/', new: 'lnkd.in'},
     {old: 'out.reddit.com/', new: 'out.reddit.com'}
   ];
   
