@@ -861,9 +861,9 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
     }
 
     function tabCreatedListener(tab) {
-      // Rastrear abas filhas (popups ou target=_blank) geradas pela aba rastreadora original
-      if (tab.openerTabId === tabId) {
-         console.log(`[LinkScout] Aba Fantasma: Interceptou nova aba filha criada pelo agregador: ${tab.id}`);
+      // Rastrear abas filhas e netas geradas pela aba rastreadora original
+      if (tab.openerTabId === tabId || childTabIds.includes(tab.openerTabId)) {
+         console.log(`[LinkScout] Aba Fantasma: Interceptou nova aba filha gerada: ${tab.id}`);
          childTabIds.push(tab.id);
       }
     }
@@ -873,7 +873,15 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
       if (updatedTabId === tabId || childTabIds.includes(updatedTabId)) {
         // Se a URL mudou e já não é mais um link agregador (escapou do redirecionador)
         if (updatedTab.url && updatedTab.url !== url && updatedTab.url !== 'about:blank') {
-           const isStillAggregator = aggregatorDomains.some(domain => updatedTab.url.includes(domain));
+           const isStillAggregator = aggregatorDomains.some(domain => {
+             try {
+               const u = new URL(updatedTab.url);
+               return (u.hostname + u.pathname).includes(domain);
+             } catch (e) {
+               return updatedTab.url.includes(domain);
+             }
+           });
+           
            if (!isStillAggregator) {
              console.log(`[LinkScout] Aba Fantasma: Detectou redirecionamento externo na aba ${updatedTabId}: ${updatedTab.url}`);
              cleanup(updatedTab.url);
@@ -886,6 +894,20 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
       // Cria a aba em background silenciosa
       const tab = await browser.tabs.create({ url: url, active: false });
       tabId = tab.id;
+      
+      // Injetar blindagem para forçar redirecionamento na mesma janela (evita abas órfãs com noopener)
+      browser.tabs.executeScript(tabId, {
+        code: `
+          const s = document.createElement('script');
+          s.textContent = "window.open = function(u){ window.location.href = u; return window; };";
+          (document.head || document.documentElement).appendChild(s);
+          document.addEventListener('click', e => {
+            const a = e.target.closest('a');
+            if (a) { a.removeAttribute('target'); }
+          }, true);
+        `,
+        runAt: "document_start"
+      }).catch(() => {});
       
       browser.tabs.onCreated.addListener(tabCreatedListener);
       browser.tabs.onUpdated.addListener(tabUpdateListener);
