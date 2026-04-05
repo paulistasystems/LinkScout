@@ -465,6 +465,7 @@ browser.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
 
 // Listen for new bookmark creations (or folders)
 browser.bookmarks.onCreated.addListener(async (id, bookmark) => {
+  if (isRestoringBookmarks) return;
   console.log('[LinkScout] Novo favorito ou pasta detectado. Sincronizando e agendando verificação background...');
   await updateFolderTimestamp(bookmark.parentId);
   await syncDatabaseWithBookmarks();
@@ -807,6 +808,7 @@ async function resolveExistingLinksBackgroundJob() {
 }
 
 let isBackgroundJobRunning = false;
+let isRestoringBookmarks = false;
 
 async function runBackgroundVerification() {
   if (isBackgroundJobRunning) {
@@ -859,6 +861,7 @@ async function restoreBookmarksFromDB() {
     if (allRecords.length === 0) return; // DB is empty too
 
     console.log('[LinkScout] Iniciando restauração de emergência! Restabelecendo', allRecords.length, 'links do IndexedDB para o Firefox.');
+    isRestoringBookmarks = true;
 
     const root = await findOrCreateFolder(parentId, rootFolderName);
     
@@ -892,8 +895,10 @@ async function restoreBookmarksFromDB() {
        }
     }
     
+    isRestoringBookmarks = false;
     console.log('[LinkScout] Restauração de emergência concluída.');
   } catch (e) {
+    isRestoringBookmarks = false;
     console.error('[LinkScout] Erro na restauração:', e);
   }
 }
