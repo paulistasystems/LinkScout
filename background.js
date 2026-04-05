@@ -438,48 +438,46 @@ async function buildFolderPathFromNode(removeInfo) {
   }
 }
 
+let syncTimeoutId = null;
+
+function requestDatabaseSync() {
+  if (syncTimeoutId) clearTimeout(syncTimeoutId);
+  syncTimeoutId = setTimeout(async () => {
+    syncTimeoutId = null;
+    await syncDatabaseWithBookmarks();
+    runBackgroundVerification();
+  }, 2500);
+}
+
 // Listen for bookmark deletions and remove from IndexedDB
 browser.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
-  // removeInfo.node contains the removed bookmark/folder
   const node = removeInfo.node;
 
   if (node.url) {
-    // Single bookmark deleted
     const removed = await removeLinkFromDatabase(node.url);
     if (removed) {
       console.log('Removed from IndexedDB:', node.url);
     }
   } else {
-    // Folder deleted - remove all bookmarks by folder path
     const folderPath = await buildFolderPathFromNode(removeInfo);
     if (folderPath) {
       await removeLinksByFolderPathPrefix(folderPath);
     }
   }
 
-  // Update parent folder timestamp
   await updateFolderTimestamp(removeInfo.parentId);
-
-  // Run background verification to check for unresolvable links again and dedup
-  runBackgroundVerification();
+  requestDatabaseSync();
 });
 
 // Listen for new bookmark creations (or folders)
 browser.bookmarks.onCreated.addListener(async (id, bookmark) => {
   if (isRestoringBookmarks) return;
-  console.log('[LinkScout] Novo favorito ou pasta detectado. Sincronizando e agendando verificação background...');
   await updateFolderTimestamp(bookmark.parentId);
-  await syncDatabaseWithBookmarks();
-  runBackgroundVerification();
+  requestDatabaseSync();
 });
 
 // Listen for bookmark changes (e.g. title or url changed natively in Firefox)
 browser.bookmarks.onChanged.addListener(async (id, changeInfo) => {
-  console.log('[LinkScout] Alteração de favorito detectada. Sincronizando e agendando verificação background...');
-  
-  // We don't get parentId directly in changeInfo for onChanged, but we want to sync
-  // Assuming the user might edit it via our UI or natively.
-  // We can fetch the bookmark to update timestamp
   try {
     const results = await browser.bookmarks.get(id);
     if (results && results.length > 0) {
@@ -487,21 +485,14 @@ browser.bookmarks.onChanged.addListener(async (id, changeInfo) => {
     }
   } catch(e) {}
   
-  await syncDatabaseWithBookmarks();
-  runBackgroundVerification();
+  requestDatabaseSync();
 });
 
 // Listen for bookmark moves (from one folder to another, or changing index)
 browser.bookmarks.onMoved.addListener(async (id, moveInfo) => {
-  console.log('[LinkScout] Movimentação de favorito detectada. Sincronizando e agendando verificação background...');
-  
-  // Update both the old parent and the new parent timestamps
   await updateFolderTimestamp(moveInfo.oldParentId);
   await updateFolderTimestamp(moveInfo.parentId);
-  
-  // A structural move might duplicate/change paths so we'll run the sync
-  await syncDatabaseWithBookmarks();
-  runBackgroundVerification();
+  requestDatabaseSync();
 });
 
 
@@ -1602,70 +1593,38 @@ function isNumberedSubfolder(title) {
   return /^\d+-\d+$/.test(title);
 }
 
-// Collect all bookmarks (links) from a folder, including from numbered subfolders
-async function collectAllBookmarks(folderId) {
+// Collect ALL bookmark nodes
+async function collectAllBookmarkNodes(folderId) {
   const bookmarks = [];
   const children = await browser.bookmarks.getChildren(folderId);
 
   for (const child of children) {
     if (child.url) {
-      // It's a bookmark
-      bookmarks.push({ title: child.title, url: child.url });
+      bookmarks.push(child);
     } else if (isNumberedSubfolder(child.title)) {
-      // It's a numbered subfolder, collect its bookmarks
       const subChildren = await browser.bookmarks.getChildren(child.id);
       for (const subChild of subChildren) {
         if (subChild.url) {
-          bookmarks.push({ title: subChild.title, url: subChild.url });
+          bookmarks.push(subChild);
         }
       }
     }
   }
-
   return bookmarks;
 }
 
-// Remove numbered subfolders from a folder
-async function removeNumberedSubfolders(folderId) {
-  const children = await browser.bookmarks.getChildren(folderId);
-
-  for (const child of children) {
-    if (!child.url && isNumberedSubfolder(child.title)) {
-      await browser.bookmarks.removeTree(child.id);
-    }
-  }
-}
-
-// Remove direct bookmarks from a folder (keeping subfolders)
-async function removeDirectBookmarks(folderId) {
-  const children = await browser.bookmarks.getChildren(folderId);
-
-  for (const child of children) {
-    if (child.url) {
-      await browser.bookmarks.remove(child.id);
-    }
-  }
-}
-
-// Reorganize a single page folder based on linksPerFolder setting
+// Reorganize a single page folder based on linksPerFolder setting safely via moves
 async function reorganizePageFolder(folderId, linksPerFolder) {
-  // Collect all bookmarks (from direct children and numbered subfolders)
-  const allBookmarks = await collectAllBookmarks(folderId);
+  const allNodes = await collectAllBookmarkNodes(folderId);
+  if (allNodes.length === 0) return;
 
-  if (allBookmarks.length === 0) return;
+  const children = await browser.bookmarks.getChildren(folderId);
+  const oldSubfolders = children.filter(c => !c.url && isNumberedSubfolder(c.title));
 
-  // Remove existing numbered subfolders
-  await removeNumberedSubfolders(folderId);
-
-  // Remove direct bookmarks
-  await removeDirectBookmarks(folderId);
-
-  // Recreate structure based on new setting
-  if (allBookmarks.length > linksPerFolder) {
-    // Create chunks and subfolders
+  if (allNodes.length > linksPerFolder) {
     const chunks = [];
-    for (let i = 0; i < allBookmarks.length; i += linksPerFolder) {
-      chunks.push(allBookmarks.slice(i, i + linksPerFolder));
+    for (let i = 0; i < allNodes.length; i += linksPerFolder) {
+      chunks.push(allNodes.slice(i, i + linksPerFolder));
     }
 
     for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
@@ -1673,25 +1632,34 @@ async function reorganizePageFolder(folderId, linksPerFolder) {
       const startNum = chunkIndex * linksPerFolder + 1;
       const endNum = startNum + chunk.length - 1;
       const folderName = `${startNum}-${endNum}`;
-      const subFolder = await findOrCreateFolder(folderId, folderName);
+      
+      let subFolder = oldSubfolders.find(f => f.title === folderName);
+      if (!subFolder) {
+        subFolder = await findOrCreateFolder(folderId, folderName);
+      } else {
+        oldSubfolders.splice(oldSubfolders.indexOf(subFolder), 1);
+      }
 
-      for (const bookmark of chunk) {
-        await browser.bookmarks.create({
-          parentId: subFolder.id,
-          title: bookmark.title,
-          url: bookmark.url
-        });
+      for (let i = 0; i < chunk.length; i++) {
+        const node = chunk[i];
+        if (node.parentId !== subFolder.id || node.index !== i) {
+          await browser.bookmarks.move(node.id, { parentId: subFolder.id, index: i });
+        }
       }
     }
   } else {
-    // Put all bookmarks directly in the folder
-    for (const bookmark of allBookmarks) {
-      await browser.bookmarks.create({
-        parentId: folderId,
-        title: bookmark.title,
-        url: bookmark.url
-      });
+    for (let i = 0; i < allNodes.length; i++) {
+      const node = allNodes[i];
+      if (node.parentId !== folderId || node.index !== i) {
+        await browser.bookmarks.move(node.id, { parentId: folderId, index: i });
+      }
     }
+  }
+
+  for (const old of oldSubfolders) {
+    try {
+      await browser.bookmarks.removeTree(old.id);
+    } catch(e) {}
   }
 }
 
