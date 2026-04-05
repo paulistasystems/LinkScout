@@ -1,5 +1,42 @@
 // LinkScout background.js
 
+// Redireciona todos os logs do background para o console da aba ativa (F12 normal do navegador), 
+// contornando falhas no console 'about:debugging'.
+const originalConsoles = {
+  log: console.log,
+  warn: console.warn,
+  error: console.error
+};
+
+function forwardToActiveTab(type, args) {
+  try {
+    const formattedArgs = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a));
+    browser.tabs.query({active: true, currentWindow: true}).then(tabs => {
+      const activeTab = tabs[0];
+      // Só injeta se for uma página web real (evita páginas de sistema como about: e moz-extension:)
+      if (activeTab && activeTab.id && activeTab.url && activeTab.url.startsWith('http')) {
+        const code = `console.${type}("[LinkScout 🤖]", ...${JSON.stringify(formattedArgs)});`;
+        browser.tabs.executeScript(activeTab.id, { code: code }).catch(() => {});
+      }
+    }).catch(() => {});
+  } catch (e) {
+    // Ignorar falhas de injeção silenciosamente
+  }
+}
+
+console.log = (...args) => {
+  originalConsoles.log(...args);
+  forwardToActiveTab('log', args);
+};
+console.warn = (...args) => {
+  originalConsoles.warn(...args);
+  forwardToActiveTab('warn', args);
+};
+console.error = (...args) => {
+  originalConsoles.error(...args);
+  forwardToActiveTab('error', args);
+};
+
 // Open options page on install
 browser.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
@@ -11,7 +48,13 @@ browser.runtime.onInstalled.addListener((details) => {
 const DEFAULT_SETTINGS = {
   rootFolder: 'LinkScout',
   bookmarkLocation: 'toolbar_____', // toolbar_____, menu________, unfiled_____
-  linksPerFolder: 10 // Maximum links per folder before creating subfolders
+  linksPerFolder: 10, // Maximum links per folder before creating subfolders
+  aggregatorDomains: [
+      'news.google.com/read/', 'news.google.com/articles/', 
+      't.co/', 'bit.ly/', 'tinyurl.com/', 'lnkd.in/', 
+      'l.facebook.com/', 'l.messenger.com/', 'out.reddit.com/',
+      'youtube.com/redirect'
+  ]
 };
 
 // IndexedDB for bookmark management
@@ -498,35 +541,47 @@ async function resolveExistingLinksBackgroundJob() {
     });
 
     if (allRecords.length === 0) {
-      console.log('[LinkScout] No links to resolve redirects');
+      console.log('✅ [LinkScout] URL Resolver: Nenhum link aguardando checagem. Tudo limpo!');
       return { checked: 0, updated: 0, removed: 0 };
     }
 
-    console.log(`[LinkScout] URL Resolver: Analyzing ${allRecords.length} records in background...`);
+    console.log(`🚀 [LinkScout] URL Resolver: Varredura iniciada! Analisando pacotão de ${allRecords.length} links em background...`);
 
     let checkedCount = 0;
     let updatedCount = 0;
     let removedCount = 0;
 
+    const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
+    const aggregatorDomains = settings.aggregatorDomains;
+
     for (const record of allRecords) {
-      if (record.redirectResolved) {
+      const isAggregator = aggregatorDomains.some(domain => record.url.includes(domain));
+
+      if (record.redirectResolved && isAggregator) {
+        console.log(`🔔 [LinkScout] URL Resolver: ${record.url} estava na fila de prontos, mas era agregador! Retornando pra fila de avaliação de segurança...`);
+      } else if (record.redirectResolved) {
         continue;
       }
 
+      console.log(`🔍 [LinkScout] URL Resolver: Buscando URL real de -> ${record.url} ...`);
+
       // Small delay to avoid blocking the browser and hitting rate limits quickly
-      await delay(250);
+      await delay(350);
 
       const resolvedUrl = await resolveUrl(record.url);
       checkedCount++;
 
       // If URL was shortened/redirected and resolved to a different destination
       if (resolvedUrl !== record.url) {
-        console.log(`[LinkScout] URL Resolver: Redirect found from ${record.url.substring(0,40)}... to ${resolvedUrl.substring(0,40)}...`);
+        console.log(`🎯 [LinkScout] URL Resolver: BINGO!
+ORIGEM: ${record.url}
+DESTINO: ${resolvedUrl}`);
 
         // Check if the new resolved URL is a duplicate of ANOTHER link already in DB
         const isDuplicate = await isLinkDuplicate(resolvedUrl);
 
         if (isDuplicate) {
+          console.warn(`🛑 [LinkScout] URL Resolver: Duplicata descoberta em tempo real! Nós já temos ${resolvedUrl} nos favoritos. Apagando clone originário de ${record.url}...`);
           // This resolved link already exists elsewhere! Delete this record and its bookmark
           try {
             // Remove from IndexedDB
@@ -552,9 +607,9 @@ async function resolveExistingLinksBackgroundJob() {
             }
 
             removedCount++;
-            console.log(`[LinkScout] URL Resolver: Removed duplicate after resolving: ${resolvedUrl}`);
+            console.log(`🗑️ [LinkScout] URL Resolver: Desinfetado com sucesso! Arquivamos a duplicata ${resolvedUrl}`);
           } catch (e) {
-            console.error('[LinkScout] URL Resolver: Error removing resolved duplicate:', e);
+            console.error('❌ [LinkScout] URL Resolver: Falha grave ao tentar apagar a duplicata descoberta:', e);
           }
         } else {
           // No duplicate found. Keep the record, but update its URL to the resolved one
@@ -587,9 +642,9 @@ async function resolveExistingLinksBackgroundJob() {
             }
 
             updatedCount++;
-            console.log(`[LinkScout] URL Resolver: Updated bookmark URL to ${resolvedUrl}`);
+            console.log(`✨ [LinkScout] URL Resolver: Sucesso absoluto! Favorito atualizado no banco limpo e desofuscado: ${resolvedUrl}`);
           } catch (e) {
-            console.error('[LinkScout] URL Resolver: Error updating resolved bookmark URL:', e);
+            console.error('❌ [LinkScout] URL Resolver: Erro tentando atualizar bookmark com o URL corrigido:', e);
           }
         }
       } else {
@@ -606,13 +661,14 @@ async function resolveExistingLinksBackgroundJob() {
             request.onsuccess = () => resolve();
             request.onerror = () => reject(request.error);
           });
+          console.log(`✅ [LinkScout] URL Resolver: Sem mudanças! Ele sempre foi puro: ${record.url} (ignorado daqui pra frente).`);
         } catch (e) {
-          console.error('[LinkScout] URL Resolver: Error marking record as resolved:', e);
+          console.error('❌ [LinkScout] URL Resolver: Error marking record as resolved:', e);
         }
       }
     }
 
-    console.log(`[LinkScout] URL Resolver complete: ${checkedCount} checked, ${updatedCount} updated, ${removedCount} duplicates removed.`);
+    console.log(`🏁 [LinkScout] URL Resolver Concluído! \n\n📊 Relatório do Job: \n- Links Checados: ${checkedCount} \n- Novos Links Puros (Atualizados): ${updatedCount}\n- Clones Destruídos: ${removedCount}`);
     return { checked: checkedCount, updated: updatedCount, removed: removedCount };
   } catch (error) {
     console.error('[LinkScout] URL Resolver error:', error);
@@ -677,20 +733,94 @@ function normalizeUrl(url) {
   }
 }
 
+// Resolve URL by opening a hidden background tab, waiting for JS redirects, and capturing the final URL
+async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
+  return new Promise(async (resolve) => {
+    let resolved = false;
+    let fallbackTimeout;
+    let tabId = null;
+
+    function cleanup(finalUrl) {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(fallbackTimeout);
+      browser.tabs.onUpdated.removeListener(tabUpdateListener);
+      
+      if (tabId !== null) {
+        browser.tabs.remove(tabId).catch(() => {});
+      }
+      
+      console.log(`[LinkScout] Aba Fantasma: Resolvido final -> ${finalUrl}`);
+      resolve(normalizeUrl(finalUrl));
+    }
+
+    function tabUpdateListener(updatedTabId, changeInfo, updatedTab) {
+      if (updatedTabId === tabId) {
+        // Se a URL mudou e já não é mais um link agregador (escapou do redirecionador)
+        if (updatedTab.url && updatedTab.url !== url && updatedTab.url !== 'about:blank') {
+           const isStillAggregator = aggregatorDomains.some(domain => updatedTab.url.includes(domain));
+           if (!isStillAggregator) {
+             console.log(`[LinkScout] Aba Fantasma: Detectou redirecionamento externo: ${updatedTab.url}`);
+             cleanup(updatedTab.url);
+           }
+        }
+      }
+    }
+
+    try {
+      // Cria a aba em background silenciosa
+      const tab = await browser.tabs.create({ url: url, active: false });
+      tabId = tab.id;
+      
+      browser.tabs.onUpdated.addListener(tabUpdateListener);
+
+      // Timeout de 8 segundos para evitar phantom tabs acumuladas
+      fallbackTimeout = setTimeout(() => {
+        if (resolved) return;
+        console.warn(`[LinkScout] Aba Fantasma: Timeout alcançado para ${url}. Fechando aba.`);
+        browser.tabs.get(tabId).then(t => {
+          cleanup(t.url || url);
+        }).catch(() => {
+          cleanup(url);
+        });
+      }, 8000);
+    } catch (e) {
+      console.error("[LinkScout] Aba Fantasma: Erro ao criar aba:", e);
+      cleanup(url);
+    }
+  });
+}
+
 // Resolve URL by following redirects via HEAD request (with timeout)
 // Falls back to normalizeUrl if the request fails
 async function resolveUrl(url) {
+  const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
+  const aggregatorDomains = settings.aggregatorDomains;
+  const isAggregator = aggregatorDomains.some(domain => url.includes(domain));
+
+  // Usar Aba Fantasma para links agregadores que podem rodar via Javascript ou bloquear HEAD
+  if (isAggregator) {
+    console.log(`[LinkScout] resolveUrl: Detectado link ofuscado/agregador. Acionando Aba Fantasma para ${url}`);
+    return await resolveUrlWithPhantomTab(url, aggregatorDomains);
+  }
+
+  console.log(`[LinkScout] resolveUrl: Iniciando requisição HEAD para ${url}`);
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const timeoutId = setTimeout(() => {
+      console.warn(`[LinkScout] resolveUrl: Timeout ao tentar resolver ${url}`);
+      controller.abort();
+    }, 5000);
     const response = await fetch(url, {
       method: 'HEAD',
       redirect: 'follow',
       signal: controller.signal
     });
     clearTimeout(timeoutId);
+    console.log(`[LinkScout] resolveUrl: Sucesso. URL final de ${url} -> ${response.url}`);
     return normalizeUrl(response.url);
   } catch (error) {
+    console.error(`[LinkScout] resolveUrl: Erro ao resolver ${url}:`, error.message);
     return normalizeUrl(url);
   }
 }
@@ -1434,6 +1564,10 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
   if (message.action === 'reorganizeFolders') {
     const result = await reorganizeAllFolders(message.settings);
     return result;
+  }
+
+  if (message.action === 'forceRescan') {
+    return await resolveExistingLinksBackgroundJob();
   }
 
   // Sidebar message handlers

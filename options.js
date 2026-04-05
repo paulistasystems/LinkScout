@@ -4,7 +4,13 @@
 const DEFAULT_SETTINGS = {
     rootFolder: 'LinkScout',
     bookmarkLocation: 'toolbar_____',
-    linksPerFolder: 10
+    linksPerFolder: 10,
+    aggregatorDomains: [
+        'news.google.com/read/', 'news.google.com/articles/', 
+        't.co/', 'bit.ly/', 'tinyurl.com/', 'lnkd.in/', 
+        'l.facebook.com/', 'l.messenger.com/', 'out.reddit.com/',
+        'youtube.com/redirect'
+    ]
 };
 
 // Load saved settings
@@ -15,6 +21,9 @@ async function loadSettings() {
         document.getElementById('rootFolder').value = settings.rootFolder;
         document.getElementById('bookmarkLocation').value = settings.bookmarkLocation;
         document.getElementById('linksPerFolder').value = settings.linksPerFolder;
+        if (settings.aggregatorDomains) {
+            document.getElementById('aggregatorDomains').value = settings.aggregatorDomains.join('\n');
+        }
 
         console.log('Settings loaded:', settings);
     } catch (error) {
@@ -26,10 +35,16 @@ async function loadSettings() {
 // Save settings
 async function saveSettings() {
     const linksPerFolder = parseInt(document.getElementById('linksPerFolder').value, 10);
+    const aggregatorText = document.getElementById('aggregatorDomains').value;
+    const customAggregatorDomains = aggregatorText.split('\n')
+        .map(domain => domain.trim())
+        .filter(domain => domain.length > 0);
+
     const newSettings = {
         rootFolder: document.getElementById('rootFolder').value.trim() || 'LinkScout',
         bookmarkLocation: document.getElementById('bookmarkLocation').value,
-        linksPerFolder: linksPerFolder > 0 ? linksPerFolder : 10
+        linksPerFolder: linksPerFolder > 0 ? linksPerFolder : 10,
+        aggregatorDomains: customAggregatorDomains
     };
 
     try {
@@ -82,6 +97,18 @@ function showStatus(message, type) {
 // Event listeners
 document.addEventListener('DOMContentLoaded', loadSettings);
 document.getElementById('saveButton').addEventListener('click', saveSettings);
+
+// Force Full Scan Button
+document.getElementById('forceRescanButton').addEventListener('click', async () => {
+    showStatus('⏳ Ativando varredura em background... Verifique o console interno (F12) ou Ctrl+Shift+J!', 'success');
+    try {
+        await browser.runtime.sendMessage({ action: 'forceRescan' });
+        showStatus('✓ Varredura solicitada! Observe o console.', 'success');
+    } catch (e) {
+        console.error('Erro ao acionar rescan:', e);
+        showStatus('✗ Erro na comunicação de varredura', 'error');
+    }
+});
 
 // Save on Enter key in text input
 document.getElementById('rootFolder').addEventListener('keypress', (e) => {

@@ -285,9 +285,17 @@
                 <p class="hint">When there are more links than this limit, numbered subfolders will be created (e.g.,
                     1-10, 11-20)</p>
             </div>
+
+            <div class="form-group" style="margin-top: 15px;">
+                <label for="aggregatorDomains">Aggregator Domains (Obfuscated Links)</label>
+                <textarea id="aggregatorDomains" rows="5" placeholder="e.g. t.co/&#10;bit.ly/"
+                    style="width: 100%; padding: 12px 15px; border: 2px solid #ddd; border-radius: 8px; font-size: 1em; font-family: monospace; resize: vertical;"></textarea>
+                <p class="hint">One string per line. Links containing these will be actively de-obfuscated in the background database job.</p>
+            </div>
         </div>
 
         <button class="save-button" id="saveButton">💾 Save Settings</button>
+        <button class="save-button" id="forceRescanButton" style="background: linear-gradient(135deg, #f6d365 0%, #fda085 100%); margin-top: 15px; color: #333;">🔍 Force Full Database Re-scan</button>
         <div class="status-message" id="statusMessage"></div>
     </div>
 
