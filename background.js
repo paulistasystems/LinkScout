@@ -601,7 +601,9 @@ async function resolveExistingLinksBackgroundJob() {
     // Filter out the records that need processing
     let recordsToProcess = [];
     for (const record of allRecords) {
-      const isAggregator = aggregatorDomains.some(domain => record.url.includes(domain));
+      const isAggregator = aggregatorDomains.some(domain => record.url.includes(domain)) ||
+                           record.url.includes('news.google.com') ||
+                           record.url.includes('google.com/url');
       if (record.redirectResolved && isAggregator) {
         console.log(`🔔 [LinkScout] URL Resolver: ${record.url} estava na fila de prontos, mas era agregador! Retornando pra fila de avaliação de segurança...`);
         recordsToProcess.push(record);
@@ -929,12 +931,18 @@ async function resolveUrl(url) {
 
   const settings = await ensureMigratedSettings();
   const aggregatorDomains = settings.aggregatorDomains;
-  const isAggregator = aggregatorDomains.some(domain => url.includes(domain));
+  
+  // Sempre considerar esses domínios como agregadores para fallback de Aba Fantasma, 
+  // caso a extração estática falhe (ex: /stories/ do Google News que usa JS para redirecionar)
+  const isAggregator = aggregatorDomains.some(domain => url.includes(domain)) || 
+                       url.includes('news.google.com') ||
+                       url.includes('google.com/url');
 
   // Usar Aba Fantasma para links agregadores que podem rodar via Javascript ou bloquear HEAD
   if (isAggregator) {
     console.log(`[LinkScout] resolveUrl: Detectado link ofuscado/agregador. Acionando Aba Fantasma para ${url}`);
-    return await resolveUrlWithPhantomTab(url, aggregatorDomains);
+    const effectiveDomains = [...aggregatorDomains, 'news.google.com', 'google.com/url'];
+    return await resolveUrlWithPhantomTab(url, effectiveDomains);
   }
 
   console.log(`[LinkScout] resolveUrl: Iniciando requisição HEAD para ${url}`);
@@ -997,10 +1005,15 @@ async function findExistingBookmark(parentId, url) {
 
 // Create or update bookmark, avoiding duplicates globally via IndexedDB
 // URLs are resolved (redirects followed) and normalized before duplicate check
-async function createOrUpdateBookmark(parentId, title, url, index = undefined, folderPath = '') {
+async function createOrUpdateBookmark(parentId, title, url, index = undefined, folderPath = '', skipResolve = false) {
   const originalUrl = url;
   // Resolve URL: follow redirects + normalize (remove tracking params, fragments)
-  const resolvedUrl = await resolveUrl(url);
+  let resolvedUrl;
+  if (skipResolve) {
+    resolvedUrl = normalizeUrl(url); // Fast path: tabs already have their final URLs
+  } else {
+    resolvedUrl = await resolveUrl(url);
+  }
 
   // Check global duplicate via IndexedDB (using resolved URL)
   const isGlobalDuplicate = await isLinkDuplicate(resolvedUrl);
@@ -1241,7 +1254,8 @@ async function saveAllTabsAndClose() {
               tab.title || tab.url,
               tab.url,
               undefined,
-              subFolderPath
+              subFolderPath,
+              true // skipResolve = true
             );
             if (result.action === 'created') successCount++;
             else if (result.action === 'skipped') skippedCount++;
@@ -1261,7 +1275,8 @@ async function saveAllTabsAndClose() {
             tab.title || tab.url,
             tab.url,
             0,
-            sessionFolderPath
+            sessionFolderPath,
+            true // skipResolve = true
           );
           if (result.action === 'created') successCount++;
           else if (result.action === 'skipped') skippedCount++;
