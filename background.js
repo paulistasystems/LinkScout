@@ -597,6 +597,13 @@ async function resolveExistingLinksBackgroundJob() {
          record.redirectResolved = false;
       }
       
+      // Auto-exclusão irreversível de Hub pages
+      if (record.url.includes('news.google.com') && (record.url.includes('/stories/') || record.url.includes('/topics/'))) {
+         record.deleteImmediately = true;
+         recordsToProcess.push(record);
+         continue;
+      }
+
       const isAggregator = (aggregatorDomains.some(domain => record.url.includes(domain)) ||
                            record.url.includes('news.google.com') ||
                            record.url.includes('google.com/url')) && 
@@ -627,6 +634,27 @@ async function resolveExistingLinksBackgroundJob() {
       console.log(`⏳ [LinkScout] Processando lote ${Math.floor(i / batchSize) + 1} de ${Math.ceil(recordsToProcess.length / batchSize)}...`);
 
       const batchPromises = batch.map(async (record) => {
+        if (record.deleteImmediately) {
+          console.warn(`🗑️ [LinkScout] URL Resolver: Excluindo página vazia irrelevante do Google News: ${record.url}`);
+          await new Promise((resolve) => {
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            store.delete(record.id);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => resolve();
+            tx.onabort = () => resolve();
+          });
+          if (record.folderId) {
+            try {
+              const children = await browser.bookmarks.getChildren(record.folderId);
+              const bookmark = children.find(c => c.url === record.url);
+              if (bookmark) await browser.bookmarks.remove(bookmark.id);
+            } catch (e) {}
+          }
+          removedCount++;
+          return;
+        }
+
         console.log(`🔍 [LinkScout] URL Resolver: Buscando URL real de -> ${record.url} ...`);
         
         try {
