@@ -643,8 +643,11 @@ async function resolveExistingLinksBackgroundJob() {
       const googleNewsHubs = ['/stories/', '/topics/', '/publications/', '/showcase', '/my/library', '/foryou', '/home'];
       const isHub = (record.url.includes('news.google.com') && googleNewsHubs.some(hub => record.url.includes(hub))) || record.url.includes('accounts.google.com/SignOutOptions');
 
-      // Auto-rescue da falha anterior: se for um artigo do Google e foi marcado como insolúvel, limpe a flag!
-      if (record.unresolvable && record.url.includes('news.google.com') && !isHub) {
+      const pureRedirects = ['t.co/', 'bit.ly/', 'tinyurl.com/', 'lnkd.in/'];
+      const isPureRedirect = pureRedirects.some(domain => record.url.includes(domain));
+
+      // Auto-rescue da falha anterior: se for um artigo do Google ou um redirecionador curto e foi marcado como insolúvel, limpe a flag!
+      if (record.unresolvable && ((record.url.includes('news.google.com') && !isHub) || isPureRedirect)) {
          record.unresolvable = false;
          record.redirectResolved = false;
       }
