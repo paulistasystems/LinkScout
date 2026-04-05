@@ -601,13 +601,16 @@ async function resolveExistingLinksBackgroundJob() {
     // Filter out the records that need processing
     let recordsToProcess = [];
     for (const record of allRecords) {
-      const isAggregator = aggregatorDomains.some(domain => record.url.includes(domain)) ||
+      const isAggregator = (aggregatorDomains.some(domain => record.url.includes(domain)) ||
                            record.url.includes('news.google.com') ||
-                           record.url.includes('google.com/url');
-      if (record.redirectResolved && isAggregator) {
+                           record.url.includes('google.com/url')) && 
+                           !record.url.includes('/stories/') && 
+                           !record.url.includes('/topics/');
+                           
+      if (record.redirectResolved && isAggregator && !record.unresolvable) {
         console.log(`🔔 [LinkScout] URL Resolver: ${record.url} estava na fila de prontos, mas era agregador! Retornando pra fila de avaliação de segurança...`);
         recordsToProcess.push(record);
-      } else if (!record.redirectResolved) {
+      } else if (!record.redirectResolved && !record.unresolvable) {
         recordsToProcess.push(record);
       }
     }
@@ -688,12 +691,12 @@ async function resolveExistingLinksBackgroundJob() {
             await new Promise((resolve, reject) => {
               const tx = db.transaction(STORE_NAME, 'readwrite');
               const store = tx.objectStore(STORE_NAME);
-              const updatedRecord = { ...record, redirectResolved: true };
+              const updatedRecord = { ...record, redirectResolved: true, unresolvable: true };
               const request = store.put(updatedRecord);
               request.onsuccess = () => resolve();
               request.onerror = () => reject(request.error);
             });
-            console.log(`✅ [LinkScout] URL Resolver: Sem mudanças! Ele sempre foi puro: ${record.url} (ignorado daqui pra frente).`);
+            console.log(`✅ [LinkScout] URL Resolver: Sem mudanças! Ele sempre foi puro: ${record.url} (ignorado daqui pra frente de verdade).`);
           }
         } catch (err) {
           console.error(`❌ [LinkScout] Falha interna ao processar lote para URL ${record.url}`, err);
@@ -956,9 +959,11 @@ async function resolveUrl(url) {
   
   // Sempre considerar esses domínios como agregadores para fallback de Aba Fantasma, 
   // caso a extração estática falhe (ex: /stories/ do Google News que usa JS para redirecionar)
-  const isAggregator = aggregatorDomains.some(domain => url.includes(domain)) || 
+  const isAggregator = (aggregatorDomains.some(domain => url.includes(domain)) || 
                        url.includes('news.google.com') ||
-                       url.includes('google.com/url');
+                       url.includes('google.com/url')) &&
+                       !url.includes('/stories/') &&
+                       !url.includes('/topics/');
 
   // Usar Aba Fantasma para links agregadores que podem rodar via Javascript ou bloquear HEAD
   if (isAggregator) {
