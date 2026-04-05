@@ -290,6 +290,7 @@ async function collectBookmarksFromFolder(folderId, folderPath = '') {
       if (child.url) {
         // It's a bookmark
         bookmarks.push({
+          id: child.id,
           url: child.url,
           title: child.title,
           folderId: folderId,
@@ -335,18 +336,28 @@ async function syncDatabaseWithBookmarks() {
 
     let synced = 0;
     let skipped = 0;
+    let purgedClones = 0;
 
     for (const bookmark of allBookmarks) {
       const added = await addLinkToDatabase(bookmark.url, bookmark.title, bookmark.folderId, bookmark.folderPath);
       if (added) {
         synced++;
       } else {
+        // Já existe na base de dados (chave única url rejeitou).
+        // Isso significa que é um clone puro no navegador. Vamos destruir no Firefox também!
+        try {
+          const globalDuplicate = await isLinkDuplicate(bookmark.url);
+          if (globalDuplicate) {
+            await browser.bookmarks.remove(bookmark.id);
+            purgedClones++;
+          }
+        } catch (e) {}
         skipped++; // Already exists
       }
     }
 
-    console.log(`Sync complete: ${synced} added, ${skipped} already existed`);
-    return { synced, skipped };
+    console.log(`Sync complete: ${synced} added, ${skipped} already existed. Purged ${purgedClones} Firefox zombie clones.`);
+    return { synced, skipped, purgedClones };
   } catch (error) {
     console.error('Error syncing database with bookmarks:', error);
     return { synced: 0, skipped: 0, error: error.message };
