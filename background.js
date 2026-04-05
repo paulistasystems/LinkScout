@@ -48,14 +48,68 @@ browser.runtime.onInstalled.addListener((details) => {
 const DEFAULT_SETTINGS = {
   rootFolder: 'LinkScout',
   bookmarkLocation: 'toolbar_____', // toolbar_____, menu________, unfiled_____
-  linksPerFolder: 10, // Maximum links per folder before creating subfolders
-  aggregatorDomains: [
-      'news.google.com/read/', 'news.google.com/articles/', 
-      't.co/', 'bit.ly/', 'tinyurl.com/', 'lnkd.in/', 
-      'l.facebook.com/', 'l.messenger.com/', 'out.reddit.com/',
-      'youtube.com/redirect'
-  ]
+  aggregatorDomains: [] // Empty by default! Phantom tab is only for user-specified manual targets
 };
+
+// Auto-migrate user settings to ensure new tracking domains are covered
+async function ensureMigratedSettings() {
+  const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
+  let domains = settings.aggregatorDomains;
+  let changed = false;
+  
+  // Wipe all legacy defaults to shut down the phantom tab engine for normal users
+  const legacyDomainsToWipe = [
+    'news.google.com', 'news.google.com/read/', 'news.google.com/articles/', 'news.google.com/rss/articles/',
+    'google.com/url', 't.co', 'bit.ly', 'tinyurl.com', 'lnkd.in', 
+    'l.facebook.com', 'm.facebook.com', 'facebook.com/l.php', 'l.messenger.com', 'out.reddit.com',
+    'youtube.com/redirect'
+  ];
+  
+  for (const ld of legacyDomainsToWipe) {
+    if (domains.includes(ld)) {
+      domains = domains.filter(d => d !== ld);
+      changed = true;
+    }
+  }
+
+  if (!domains.includes('google.com/url')) {
+    domains.push('google.com/url');
+    changed = true;
+  }
+
+  // Normalize existing facebook domains and add new ones
+  const facebookMigrations = [
+    {old: 'l.facebook.com/', new: 'l.facebook.com'},
+    {old: 'l.messenger.com/', new: 'l.messenger.com'},
+    {old: 't.co/', new: 't.co'},
+    {old: 'bit.ly/', new: 'bit.ly'},
+    {old: 'tinyurl.com/', new: 'tinyurl.com'},
+    {old: 'lnkd.in/', new: 'lnkd.in'},
+    {old: 'out.reddit.com/', new: 'out.reddit.com'}
+  ];
+  
+  for (const m of facebookMigrations) {
+    if (domains.includes(m.old)) {
+      domains[domains.indexOf(m.old)] = m.new;
+      changed = true;
+    }
+  }
+
+  if (!domains.includes('facebook.com/l.php')) {
+    domains.push('facebook.com/l.php');
+    changed = true;
+  }
+  if (!domains.includes('m.facebook.com')) {
+    domains.push('m.facebook.com');
+    changed = true;
+  }
+
+  if (changed) {
+    await browser.storage.sync.set({ aggregatorDomains: domains });
+    settings.aggregatorDomains = domains;
+  }
+  return settings;
+}
 
 // IndexedDB for bookmark management
 const DB_NAME = 'LinkScoutDB';
@@ -540,132 +594,112 @@ async function resolveExistingLinksBackgroundJob() {
       request.onerror = () => resolve([]);
     });
 
-    if (allRecords.length === 0) {
+    const settings = await ensureMigratedSettings();
+    const aggregatorDomains = settings.aggregatorDomains;
+    const batchSize = settings.resolveBatchSize || 10;
+
+    // Filter out the records that need processing
+    let recordsToProcess = [];
+    for (const record of allRecords) {
+      const isAggregator = aggregatorDomains.some(domain => record.url.includes(domain));
+      if (record.redirectResolved && isAggregator) {
+        console.log(`🔔 [LinkScout] URL Resolver: ${record.url} estava na fila de prontos, mas era agregador! Retornando pra fila de avaliação de segurança...`);
+        recordsToProcess.push(record);
+      } else if (!record.redirectResolved) {
+        recordsToProcess.push(record);
+      }
+    }
+
+    if (recordsToProcess.length === 0) {
       console.log('✅ [LinkScout] URL Resolver: Nenhum link aguardando checagem. Tudo limpo!');
       return { checked: 0, updated: 0, removed: 0 };
     }
 
-    console.log(`🚀 [LinkScout] URL Resolver: Varredura iniciada! Analisando pacotão de ${allRecords.length} links em background...`);
+    console.log(`🚀 [LinkScout] URL Resolver: Varredura iniciada! Analisando pendentes (${recordsToProcess.length} links) em lotes de ${batchSize}...`);
 
     let checkedCount = 0;
     let updatedCount = 0;
     let removedCount = 0;
 
-    const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
-    const aggregatorDomains = settings.aggregatorDomains;
+    for (let i = 0; i < recordsToProcess.length; i += batchSize) {
+      const batch = recordsToProcess.slice(i, i + batchSize);
+      console.log(`⏳ [LinkScout] Processando lote ${Math.floor(i / batchSize) + 1} de ${Math.ceil(recordsToProcess.length / batchSize)}...`);
 
-    for (const record of allRecords) {
-      const isAggregator = aggregatorDomains.some(domain => record.url.includes(domain));
+      const batchPromises = batch.map(async (record) => {
+        console.log(`🔍 [LinkScout] URL Resolver: Buscando URL real de -> ${record.url} ...`);
+        
+        try {
+          // Small staggered delay to prevent bursts hitting rate limits immediately
+          await delay(Math.random() * 500);
+          
+          const resolvedUrl = await resolveUrl(record.url);
+          checkedCount++;
 
-      if (record.redirectResolved && isAggregator) {
-        console.log(`🔔 [LinkScout] URL Resolver: ${record.url} estava na fila de prontos, mas era agregador! Retornando pra fila de avaliação de segurança...`);
-      } else if (record.redirectResolved) {
-        continue;
-      }
+          if (resolvedUrl !== record.url) {
+            console.log(`🎯 [LinkScout] URL Resolver: BINGO!\nORIGEM: ${record.url}\nDESTINO: ${resolvedUrl}`);
+            const isDuplicate = await isLinkDuplicate(resolvedUrl);
 
-      console.log(`🔍 [LinkScout] URL Resolver: Buscando URL real de -> ${record.url} ...`);
+            if (isDuplicate) {
+              console.warn(`🛑 [LinkScout] URL Resolver: Duplicata descoberta em tempo real! Nós já temos ${resolvedUrl} nos favoritos. Apagando clone originário de ${record.url}...`);
+              // Remove from IndexedDB
+              await new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                const store = tx.objectStore(STORE_NAME);
+                const request = store.delete(record.id);
+                request.onsuccess = () => resolve();
+                request.onerror = () => reject(request.error);
+              });
 
-      // Small delay to avoid blocking the browser and hitting rate limits quickly
-      await delay(350);
-
-      const resolvedUrl = await resolveUrl(record.url);
-      checkedCount++;
-
-      // If URL was shortened/redirected and resolved to a different destination
-      if (resolvedUrl !== record.url) {
-        console.log(`🎯 [LinkScout] URL Resolver: BINGO!
-ORIGEM: ${record.url}
-DESTINO: ${resolvedUrl}`);
-
-        // Check if the new resolved URL is a duplicate of ANOTHER link already in DB
-        const isDuplicate = await isLinkDuplicate(resolvedUrl);
-
-        if (isDuplicate) {
-          console.warn(`🛑 [LinkScout] URL Resolver: Duplicata descoberta em tempo real! Nós já temos ${resolvedUrl} nos favoritos. Apagando clone originário de ${record.url}...`);
-          // This resolved link already exists elsewhere! Delete this record and its bookmark
-          try {
-            // Remove from IndexedDB
-            await new Promise((resolve, reject) => {
-              const tx = db.transaction(STORE_NAME, 'readwrite');
-              const store = tx.objectStore(STORE_NAME);
-              const request = store.delete(record.id);
-              request.onsuccess = () => resolve();
-              request.onerror = () => reject(request.error);
-            });
-
-            // Remove corresponding Firefox bookmark
-            if (record.folderId) {
-              try {
-                const children = await browser.bookmarks.getChildren(record.folderId);
-                const bookmark = children.find(c => c.url === record.url);
-                if (bookmark) {
-                  await browser.bookmarks.remove(bookmark.id);
-                }
-              } catch (e) {
-                // Ignore folder errors
+              // Remove from Bookmark Tree
+              if (record.folderId) {
+                try {
+                  const children = await browser.bookmarks.getChildren(record.folderId);
+                  const bookmark = children.find(c => c.url === record.url);
+                  if (bookmark) await browser.bookmarks.remove(bookmark.id);
+                } catch (e) {}
               }
+              removedCount++;
+              console.log(`🗑️ [LinkScout] URL Resolver: Desinfetado com sucesso! Arquivamos a duplicata ${resolvedUrl}`);
+            } else {
+              // Update existing record and bookmark
+              await new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                const store = tx.objectStore(STORE_NAME);
+                const updatedRecord = { ...record, originalUrl: record.originalUrl || record.url, url: resolvedUrl, redirectResolved: true };
+                const request = store.put(updatedRecord);
+                request.onsuccess = () => resolve();
+                request.onerror = () => reject(request.error);
+              });
+              
+              if (record.folderId) {
+                try {
+                  const children = await browser.bookmarks.getChildren(record.folderId);
+                  const bookmark = children.find(c => c.url === record.url);
+                  if (bookmark) await browser.bookmarks.update(bookmark.id, { url: resolvedUrl });
+                } catch (e) {}
+              }
+              updatedCount++;
+              console.log(`✨ [LinkScout] URL Resolver: Sucesso absoluto! Favorito atualizado no banco limpo e desofuscado: ${resolvedUrl}`);
             }
-
-            removedCount++;
-            console.log(`🗑️ [LinkScout] URL Resolver: Desinfetado com sucesso! Arquivamos a duplicata ${resolvedUrl}`);
-          } catch (e) {
-            console.error('❌ [LinkScout] URL Resolver: Falha grave ao tentar apagar a duplicata descoberta:', e);
-          }
-        } else {
-          // No duplicate found. Keep the record, but update its URL to the resolved one
-          try {
+          } else {
+            // URL unchanged, mark resolved
             await new Promise((resolve, reject) => {
               const tx = db.transaction(STORE_NAME, 'readwrite');
               const store = tx.objectStore(STORE_NAME);
-              const updatedRecord = {
-                ...record,
-                originalUrl: record.originalUrl || record.url,
-                url: resolvedUrl,
-                redirectResolved: true
-              };
+              const updatedRecord = { ...record, redirectResolved: true };
               const request = store.put(updatedRecord);
               request.onsuccess = () => resolve();
               request.onerror = () => reject(request.error);
             });
-
-            // Update Firefox bookmark URL
-            if (record.folderId) {
-              try {
-                const children = await browser.bookmarks.getChildren(record.folderId);
-                const bookmark = children.find(c => c.url === record.url);
-                if (bookmark) {
-                  await browser.bookmarks.update(bookmark.id, { url: resolvedUrl });
-                }
-              } catch (e) {
-                // Ignore folder errors
-              }
-            }
-
-            updatedCount++;
-            console.log(`✨ [LinkScout] URL Resolver: Sucesso absoluto! Favorito atualizado no banco limpo e desofuscado: ${resolvedUrl}`);
-          } catch (e) {
-            console.error('❌ [LinkScout] URL Resolver: Erro tentando atualizar bookmark com o URL corrigido:', e);
+            console.log(`✅ [LinkScout] URL Resolver: Sem mudanças! Ele sempre foi puro: ${record.url} (ignorado daqui pra frente).`);
           }
+        } catch (err) {
+          console.error(`❌ [LinkScout] Falha interna ao processar lote para URL ${record.url}`, err);
         }
-      } else {
-        // No redirect found, URL is unchanged. Mark it as resolved so we don't check again.
-        try {
-          await new Promise((resolve, reject) => {
-            const tx = db.transaction(STORE_NAME, 'readwrite');
-            const store = tx.objectStore(STORE_NAME);
-            const updatedRecord = {
-              ...record,
-              redirectResolved: true
-            };
-            const request = store.put(updatedRecord);
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error);
-          });
-          console.log(`✅ [LinkScout] URL Resolver: Sem mudanças! Ele sempre foi puro: ${record.url} (ignorado daqui pra frente).`);
-        } catch (e) {
-          console.error('❌ [LinkScout] URL Resolver: Error marking record as resolved:', e);
-        }
-      }
+      });
+
+      await Promise.all(batchPromises);
+      await delay(1200); // Generous cooldown between batches so host machine breathes
     }
 
     console.log(`🏁 [LinkScout] URL Resolver Concluído! \n\n📊 Relatório do Job: \n- Links Checados: ${checkedCount} \n- Novos Links Puros (Atualizados): ${updatedCount}\n- Clones Destruídos: ${removedCount}`);
@@ -733,34 +767,113 @@ function normalizeUrl(url) {
   }
 }
 
+// Extract target URL directly from query parameters without making requests if possible
+function extractTargetFromRedirectUrl(url) {
+  try {
+    const urlObj = new URL(url);
+    const domain = urlObj.hostname;
+    
+    // Google News: try to decode CBM base64 protobuf encoded articles
+    if (domain.includes('news.google.com') && (urlObj.pathname.includes('/articles/') || urlObj.pathname.includes('/read/'))) {
+      try {
+        const b64 = urlObj.pathname.split(/\/articles\/|\/read\//)[1].split('?')[0];
+        if (b64) {
+          let safeB64 = b64.replace(/-/g, '+').replace(/_/g, '/');
+          while (safeB64.length % 4) safeB64 += '='; // Essential padding for atob()
+          const text = atob(safeB64);
+          const httpIndex = text.indexOf('http');
+          if (httpIndex !== -1) {
+            let finalUrl = '';
+            for (let i = httpIndex; i < text.length; i++) {
+              const charCode = text.charCodeAt(i);
+              // ASCII printable characters range from 32 to 126
+              if (charCode >= 32 && charCode <= 126) {
+                finalUrl += text[i];
+              } else {
+                break; // End of string in protobuf
+              }
+            }
+            if (finalUrl.startsWith('http')) return decodeURIComponent(finalUrl);
+          }
+        }
+      } catch (e) {
+        // If decoding fails, naturally fallback to phantom tab or HEAD request
+        console.error('[LinkScout] Google News base64 parse error:', e);
+      }
+    }
+
+    // Facebook and Messenger: look for 'u' parameter, especially in l.php or /flx/warn
+    if (domain.includes('facebook.com') || domain.includes('messenger.com')) {
+      const u = urlObj.searchParams.get('u');
+      if (u) return decodeURIComponent(u);
+    }
+    
+    // YouTube redirect: look for 'q' parameter
+    if (domain.includes('youtube.com') && urlObj.pathname.includes('/redirect')) {
+      const q = urlObj.searchParams.get('q');
+      if (q) return decodeURIComponent(q);
+    }
+    
+    // Reddit out domain: look for 'url' parameter
+    if (domain.includes('reddit.com')) {
+      const urlParam = urlObj.searchParams.get('url');
+      if (urlParam) return decodeURIComponent(urlParam);
+    }
+
+    // Google custom redirect tracking
+    if (domain.includes('google.com') && urlObj.pathname.includes('/url')) {
+      const q = urlObj.searchParams.get('q') || urlObj.searchParams.get('url');
+      if (q) return decodeURIComponent(q);
+    }
+
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
 // Resolve URL by opening a hidden background tab, waiting for JS redirects, and capturing the final URL
 async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
   return new Promise(async (resolve) => {
     let resolved = false;
     let fallbackTimeout;
     let tabId = null;
+    let childTabIds = [];
 
     function cleanup(finalUrl) {
       if (resolved) return;
       resolved = true;
       clearTimeout(fallbackTimeout);
       browser.tabs.onUpdated.removeListener(tabUpdateListener);
+      browser.tabs.onCreated.removeListener(tabCreatedListener);
       
       if (tabId !== null) {
         browser.tabs.remove(tabId).catch(() => {});
+      }
+      for (const cId of childTabIds) {
+        browser.tabs.remove(cId).catch(() => {});
       }
       
       console.log(`[LinkScout] Aba Fantasma: Resolvido final -> ${finalUrl}`);
       resolve(normalizeUrl(finalUrl));
     }
 
+    function tabCreatedListener(tab) {
+      // Rastrear abas filhas (popups ou target=_blank) geradas pela aba rastreadora original
+      if (tab.openerTabId === tabId) {
+         console.log(`[LinkScout] Aba Fantasma: Interceptou nova aba filha criada pelo agregador: ${tab.id}`);
+         childTabIds.push(tab.id);
+      }
+    }
+
     function tabUpdateListener(updatedTabId, changeInfo, updatedTab) {
-      if (updatedTabId === tabId) {
+      // Analisar tanto a aba raiz quanto as suas crias diretas
+      if (updatedTabId === tabId || childTabIds.includes(updatedTabId)) {
         // Se a URL mudou e já não é mais um link agregador (escapou do redirecionador)
         if (updatedTab.url && updatedTab.url !== url && updatedTab.url !== 'about:blank') {
            const isStillAggregator = aggregatorDomains.some(domain => updatedTab.url.includes(domain));
            if (!isStillAggregator) {
-             console.log(`[LinkScout] Aba Fantasma: Detectou redirecionamento externo: ${updatedTab.url}`);
+             console.log(`[LinkScout] Aba Fantasma: Detectou redirecionamento externo na aba ${updatedTabId}: ${updatedTab.url}`);
              cleanup(updatedTab.url);
            }
         }
@@ -772,20 +885,32 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
       const tab = await browser.tabs.create({ url: url, active: false });
       tabId = tab.id;
       
+      browser.tabs.onCreated.addListener(tabCreatedListener);
       browser.tabs.onUpdated.addListener(tabUpdateListener);
 
-      // Timeout de 8 segundos para evitar phantom tabs acumuladas
+      // Timeout de 15 segundos para evitar phantom tabs acumuladas
       fallbackTimeout = setTimeout(() => {
         if (resolved) return;
-        console.warn(`[LinkScout] Aba Fantasma: Timeout alcançado para ${url}. Fechando aba.`);
+        console.warn(`[LinkScout] Aba Fantasma: Timeout alcançado para ${url}. Fechando todas as abas vinculadas.`);
         browser.tabs.get(tabId).then(t => {
+          // Fallback: se travou no redirecionador nativo do google, extrair param
+          if (t.url && t.url.includes('google.com/url')) {
+             try {
+               let u = new URL(t.url);
+               let q = u.searchParams.get('q') || u.searchParams.get('url');
+               if (q) {
+                 console.log(`[LinkScout] Aba Fantasma: Extração manual segura via parametro q para ${t.url}`);
+                 return cleanup(q);
+               }
+             } catch(e) {}
+          }
           cleanup(t.url || url);
         }).catch(() => {
           cleanup(url);
         });
-      }, 8000);
+      }, 15000);
     } catch (e) {
-      console.error("[LinkScout] Aba Fantasma: Erro ao criar aba:", e);
+      console.error("[LinkScout] Aba Fantasma: Erro crítico ao criar aba raiz:", e);
       cleanup(url);
     }
   });
@@ -794,7 +919,15 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
 // Resolve URL by following redirects via HEAD request (with timeout)
 // Falls back to normalizeUrl if the request fails
 async function resolveUrl(url) {
-  const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
+  // Try static extraction first to bypass warning pages and save time (Facebook, Reddit, YT, Google tracking)
+  const extractResult = extractTargetFromRedirectUrl(url);
+  if (extractResult) {
+    console.log(`[LinkScout] resolveUrl: Extração direta bem-sucedida do ofuscador para ${url} -> ${extractResult}`);
+    // Recurse to handle chained redirects!
+    return resolveUrl(extractResult);
+  }
+
+  const settings = await ensureMigratedSettings();
   const aggregatorDomains = settings.aggregatorDomains;
   const isAggregator = aggregatorDomains.some(domain => url.includes(domain));
 

@@ -5,12 +5,8 @@ const DEFAULT_SETTINGS = {
     rootFolder: 'LinkScout',
     bookmarkLocation: 'toolbar_____',
     linksPerFolder: 10,
-    aggregatorDomains: [
-        'news.google.com/read/', 'news.google.com/articles/', 
-        't.co/', 'bit.ly/', 'tinyurl.com/', 'lnkd.in/', 
-        'l.facebook.com/', 'l.messenger.com/', 'out.reddit.com/',
-        'youtube.com/redirect'
-    ]
+    resolveBatchSize: 10,
+    aggregatorDomains: []
 };
 
 // Load saved settings
@@ -21,6 +17,7 @@ async function loadSettings() {
         document.getElementById('rootFolder').value = settings.rootFolder;
         document.getElementById('bookmarkLocation').value = settings.bookmarkLocation;
         document.getElementById('linksPerFolder').value = settings.linksPerFolder;
+        document.getElementById('resolveBatchSize').value = settings.resolveBatchSize || 10;
         if (settings.aggregatorDomains) {
             document.getElementById('aggregatorDomains').value = settings.aggregatorDomains.join('\n');
         }
@@ -35,6 +32,7 @@ async function loadSettings() {
 // Save settings
 async function saveSettings() {
     const linksPerFolder = parseInt(document.getElementById('linksPerFolder').value, 10);
+    const resolveBatchSize = parseInt(document.getElementById('resolveBatchSize').value, 10);
     const aggregatorText = document.getElementById('aggregatorDomains').value;
     const customAggregatorDomains = aggregatorText.split('\n')
         .map(domain => domain.trim())
@@ -44,6 +42,7 @@ async function saveSettings() {
         rootFolder: document.getElementById('rootFolder').value.trim() || 'LinkScout',
         bookmarkLocation: document.getElementById('bookmarkLocation').value,
         linksPerFolder: linksPerFolder > 0 ? linksPerFolder : 10,
+        resolveBatchSize: resolveBatchSize > 0 ? resolveBatchSize : 10,
         aggregatorDomains: customAggregatorDomains
     };
 
