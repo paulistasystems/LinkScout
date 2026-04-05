@@ -649,14 +649,17 @@ async function resolveExistingLinksBackgroundJob() {
     // Filter out the records that need processing
     let recordsToProcess = [];
     for (const record of allRecords) {
+      const googleNewsHubs = ['/stories/', '/topics/', '/publications/', '/showcase', '/my/library', '/foryou', '/home'];
+      const isHub = (record.url.includes('news.google.com') && googleNewsHubs.some(hub => record.url.includes(hub))) || record.url.includes('accounts.google.com/SignOutOptions');
+
       // Auto-rescue da falha anterior: se for um artigo do Google e foi marcado como insolúvel, limpe a flag!
-      if (record.unresolvable && record.url.includes('news.google.com') && !record.url.includes('/stories/') && !record.url.includes('/topics/') && !record.url.includes('/publications/')) {
+      if (record.unresolvable && record.url.includes('news.google.com') && !isHub) {
          record.unresolvable = false;
          record.redirectResolved = false;
       }
       
       // Auto-exclusão irreversível de Hub pages
-      if (record.url.includes('news.google.com') && (record.url.includes('/stories/') || record.url.includes('/topics/') || record.url.includes('/publications/'))) {
+      if (isHub) {
          record.deleteImmediately = true;
          recordsToProcess.push(record);
          continue;
@@ -665,9 +668,7 @@ async function resolveExistingLinksBackgroundJob() {
       const isAggregator = (aggregatorDomains.some(domain => record.url.includes(domain)) ||
                            record.url.includes('news.google.com') ||
                            record.url.includes('google.com/url')) && 
-                           !record.url.includes('/stories/') && 
-                           !record.url.includes('/topics/') &&
-                           !record.url.includes('/publications/');
+                           !isHub;
                            
       if (record.redirectResolved && isAggregator && !record.unresolvable) {
         console.log(`🔔 [LinkScout] URL Resolver: ${record.url} estava na fila de prontos, mas era agregador! Retornando pra fila de avaliação de segurança...`);
@@ -1148,14 +1149,15 @@ async function resolveUrl(url, depth = 0) {
   const settings = await ensureMigratedSettings();
   const aggregatorDomains = settings.aggregatorDomains;
   
+  const googleNewsHubs = ['/stories/', '/topics/', '/publications/', '/showcase', '/my/library', '/foryou', '/home'];
+  const isHub = (url.includes('news.google.com') && googleNewsHubs.some(hub => url.includes(hub))) || url.includes('accounts.google.com/SignOutOptions');
+
   // Sempre considerar esses domínios como agregadores para fallback de Aba Fantasma, 
   // caso a extração estática falhe (ex: /stories/ do Google News que usa JS para redirecionar)
   const isAggregator = (aggregatorDomains.some(domain => url.includes(domain)) || 
                        url.includes('news.google.com') ||
                        url.includes('google.com/url')) &&
-                       !url.includes('/stories/') &&
-                       !url.includes('/topics/') &&
-                       !url.includes('/publications/');
+                       !isHub;
 
   // Usar Aba Fantasma para links agregadores que podem rodar via Javascript ou bloquear HEAD
   if (isAggregator) {
@@ -1165,22 +1167,58 @@ async function resolveUrl(url, depth = 0) {
   }
 
   console.log(`[LinkScout] resolveUrl: Iniciando requisição HEAD para ${url}`);
+  console.log(`[LinkScout] resolveUrl: Iniciando requisição para ${url}`);
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => {
-      console.warn(`[LinkScout] resolveUrl: Timeout ao tentar resolver ${url}`);
-      controller.abort();
-    }, 5000);
-    const response = await fetch(url, {
-      method: 'HEAD',
-      redirect: 'follow',
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-    console.log(`[LinkScout] resolveUrl: Sucesso. URL final de ${url} -> ${response.url}`);
-    return normalizeUrl(response.url);
+    let finalUrl = url;
+    let headFailed = false;
+    let headResponseOk = false;
+    
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => { controller.abort(); }, 5000);
+      const response = await fetch(url, { method: 'HEAD', redirect: 'follow', signal: controller.signal });
+      clearTimeout(timeoutId);
+      finalUrl = response.url;
+      headResponseOk = response.ok;
+    } catch (e) {
+      console.warn(`[LinkScout] resolveUrl: HEAD falhou para ${url}:`, e.message);
+      headFailed = true;
+    }
+
+    // Fallback: se HEAD falhou, retornou a mesma URL c/ erro nativo, ou for sabidamente um redirecionador HTML (t.co)
+    if (headFailed || (finalUrl === url && (!headResponseOk || url.includes('t.co/') || url.includes('bit.ly/')))) {
+        console.log(`[LinkScout] resolveUrl: Tentando GET de resgate para ${url}...`);
+        const getController = new AbortController();
+        const getTimeout = setTimeout(() => { getController.abort(); }, 6000);
+        
+        try {
+            const getResponse = await fetch(url, { method: 'GET', redirect: 'follow', signal: getController.signal });
+            finalUrl = getResponse.url;
+            
+            // Se a URL final ainda é igual, tenta ler o corpo para HTML redirect tags
+            if (finalUrl === url) {
+               const text = await getResponse.text();
+               const metaMatch = text.match(/URL=['"]?(https?:\/\/[^'" >]+)['"]?/i);
+               if (metaMatch && metaMatch[1]) {
+                   finalUrl = metaMatch[1];
+               } else {
+                   const jsMatch = text.match(/location\.replace\(['"]([^'"]+)['"]\)/);
+                   if (jsMatch && jsMatch[1]) {
+                       finalUrl = jsMatch[1].replace(/\\\//g, '/');
+                   }
+               }
+            }
+        } catch (e) {
+            console.error(`[LinkScout] resolveUrl: GET de resgate falhou para ${url}:`, e.message);
+        } finally {
+            clearTimeout(getTimeout);
+        }
+    }
+
+    console.log(`[LinkScout] resolveUrl: Sucesso. URL final de ${url} -> ${finalUrl}`);
+    return normalizeUrl(finalUrl);
   } catch (error) {
-    console.error(`[LinkScout] resolveUrl: Erro ao resolver ${url}:`, error.message);
+    console.error(`[LinkScout] resolveUrl: Erro irreversível ao resolver ${url}:`, error.message);
     return normalizeUrl(url);
   }
 }
