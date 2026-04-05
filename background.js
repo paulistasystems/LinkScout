@@ -57,23 +57,13 @@ async function ensureMigratedSettings() {
   let domains = settings.aggregatorDomains;
   let changed = false;
   
-  // Wipe all legacy defaults to shut down the phantom tab engine for normal users
-  const legacyDomainsToWipe = [
-    'news.google.com', 'news.google.com/read/', 'news.google.com/articles/', 'news.google.com/rss/articles/',
-    'google.com/url', 't.co', 'bit.ly', 'tinyurl.com', 'lnkd.in', 
-    'l.facebook.com', 'm.facebook.com', 'facebook.com/l.php', 'l.messenger.com', 'out.reddit.com',
-    'youtube.com/redirect'
-  ];
-  
-  for (const ld of legacyDomainsToWipe) {
-    if (domains.includes(ld)) {
-      domains = domains.filter(d => d !== ld);
-      changed = true;
-    }
-  }
-
-  if (!domains.includes('google.com/url')) {
-    domains.push('google.com/url');
+  // Start with default recommended domains if empty
+  if (domains.length === 0) {
+    domains = [
+      'news.google.com', 'google.com/url', 't.co', 'bit.ly', 'tinyurl.com', 'lnkd.in', 
+      'l.facebook.com', 'm.facebook.com', 'facebook.com/l.php', 'l.messenger.com', 'out.reddit.com',
+      'youtube.com/redirect'
+    ];
     changed = true;
   }
 
@@ -650,9 +640,10 @@ async function resolveExistingLinksBackgroundJob() {
               await new Promise((resolve, reject) => {
                 const tx = db.transaction(STORE_NAME, 'readwrite');
                 const store = tx.objectStore(STORE_NAME);
-                const request = store.delete(record.id);
-                request.onsuccess = () => resolve();
-                request.onerror = () => reject(request.error);
+                store.delete(record.id);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+                tx.onabort = () => reject(new Error('Transaction aborted'));
               });
 
               // Remove from Bookmark Tree
@@ -671,9 +662,10 @@ async function resolveExistingLinksBackgroundJob() {
                 const tx = db.transaction(STORE_NAME, 'readwrite');
                 const store = tx.objectStore(STORE_NAME);
                 const updatedRecord = { ...record, originalUrl: record.originalUrl || record.url, url: resolvedUrl, redirectResolved: true };
-                const request = store.put(updatedRecord);
-                request.onsuccess = () => resolve();
-                request.onerror = () => reject(request.error);
+                store.put(updatedRecord);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+                tx.onabort = () => reject(new Error('Transaction aborted'));
               });
               
               if (record.folderId) {
@@ -692,9 +684,10 @@ async function resolveExistingLinksBackgroundJob() {
               const tx = db.transaction(STORE_NAME, 'readwrite');
               const store = tx.objectStore(STORE_NAME);
               const updatedRecord = { ...record, redirectResolved: true, unresolvable: true };
-              const request = store.put(updatedRecord);
-              request.onsuccess = () => resolve();
-              request.onerror = () => reject(request.error);
+              store.put(updatedRecord);
+              tx.oncomplete = () => resolve();
+              tx.onerror = () => reject(tx.error);
+              tx.onabort = () => reject(new Error('Transaction aborted'));
             });
             console.log(`✅ [LinkScout] URL Resolver: Sem mudanças! Ele sempre foi puro: ${record.url} (ignorado daqui pra frente de verdade).`);
           }
