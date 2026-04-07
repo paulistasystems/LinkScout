@@ -6,6 +6,7 @@ const DEFAULT_SETTINGS = {
     bookmarkLocation: 'toolbar_____',
     linksPerFolder: 10,
     resolveBatchSize: 10,
+    enableUrlResolver: false,
     aggregatorDomains: []
 };
 
@@ -18,6 +19,7 @@ async function loadSettings() {
         document.getElementById('bookmarkLocation').value = settings.bookmarkLocation;
         document.getElementById('linksPerFolder').value = settings.linksPerFolder;
         document.getElementById('resolveBatchSize').value = settings.resolveBatchSize || 10;
+        document.getElementById('enableUrlResolver').checked = settings.enableUrlResolver;
 
         console.log('Settings loaded:', settings);
     } catch (error) {
@@ -30,12 +32,14 @@ async function loadSettings() {
 async function saveSettings() {
     const linksPerFolder = parseInt(document.getElementById('linksPerFolder').value, 10);
     const resolveBatchSize = parseInt(document.getElementById('resolveBatchSize').value, 10);
+    const enableUrlResolver = document.getElementById('enableUrlResolver').checked;
 
     const newSettings = {
         rootFolder: document.getElementById('rootFolder').value.trim() || 'LinkScout',
         bookmarkLocation: document.getElementById('bookmarkLocation').value,
         linksPerFolder: linksPerFolder > 0 ? linksPerFolder : 10,
-        resolveBatchSize: resolveBatchSize > 0 ? resolveBatchSize : 10
+        resolveBatchSize: resolveBatchSize > 0 ? resolveBatchSize : 10,
+        enableUrlResolver: enableUrlResolver
     };
 
     try {

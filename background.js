@@ -48,6 +48,7 @@ browser.runtime.onInstalled.addListener((details) => {
 const DEFAULT_SETTINGS = {
   rootFolder: 'LinkScout',
   bookmarkLocation: 'toolbar_____', // toolbar_____, menu________, unfiled_____
+  enableUrlResolver: false,
   aggregatorDomains: [] // Empty by default! Phantom tab is only for user-specified manual targets
 };
 
@@ -634,6 +635,12 @@ async function resolveExistingLinksBackgroundJob() {
     });
 
     const settings = await ensureMigratedSettings();
+
+    if (!settings.enableUrlResolver) {
+      console.log('🛑 [LinkScout] URL Resolver está desativado nas preferências. Ignorando processo.');
+      return { checked: 0, updated: 0, removed: 0, skipped: true };
+    }
+
     const aggregatorDomains = settings.aggregatorDomains;
     const batchSize = settings.resolveBatchSize || 10;
 
