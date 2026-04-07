@@ -578,6 +578,7 @@ async function deduplicateExistingDatabase() {
       // Update the kept record's URL to normalized version if it changed
       const keepRecord = records[0];
       if (keepRecord.url !== normalizedUrl) {
+        const newTitle = (keepRecord.title === keepRecord.url) ? normalizedUrl : keepRecord.title;
         try {
           await new Promise((resolve, reject) => {
             const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -585,7 +586,8 @@ async function deduplicateExistingDatabase() {
             const updatedRecord = {
               ...keepRecord,
               originalUrl: keepRecord.originalUrl || keepRecord.url,
-              url: normalizedUrl
+              url: normalizedUrl,
+              title: newTitle
             };
             store.put(updatedRecord);
             tx.oncomplete = () => resolve();
@@ -598,7 +600,7 @@ async function deduplicateExistingDatabase() {
               const children = await browser.bookmarks.getChildren(keepRecord.folderId);
               const bookmark = children.find(c => c.url === keepRecord.url);
               if (bookmark) {
-                await browser.bookmarks.update(bookmark.id, { url: normalizedUrl });
+                await browser.bookmarks.update(bookmark.id, { url: normalizedUrl, title: newTitle });
               }
             } catch (e) {
               // Folder might not exist, skip
@@ -753,10 +755,11 @@ async function resolveExistingLinksBackgroundJob() {
               console.log(`🗑️ [LinkScout] URL Resolver: Desinfetado com sucesso! Arquivamos a duplicata ${resolvedUrl}`);
             } else {
               // Update existing record and bookmark
+              const newTitle = (record.title === record.url) ? resolvedUrl : record.title;
               await new Promise((resolve, reject) => {
                 const tx = db.transaction(STORE_NAME, 'readwrite');
                 const store = tx.objectStore(STORE_NAME);
-                const updatedRecord = { ...record, originalUrl: record.originalUrl || record.url, url: resolvedUrl, redirectResolved: true };
+                const updatedRecord = { ...record, originalUrl: record.originalUrl || record.url, url: resolvedUrl, title: newTitle, redirectResolved: true };
                 store.put(updatedRecord);
                 tx.oncomplete = () => resolve();
                 tx.onerror = () => reject(tx.error);
@@ -767,7 +770,7 @@ async function resolveExistingLinksBackgroundJob() {
                 try {
                   const children = await browser.bookmarks.getChildren(record.folderId);
                   const bookmark = children.find(c => c.url === record.url);
-                  if (bookmark) await browser.bookmarks.update(bookmark.id, { url: resolvedUrl });
+                  if (bookmark) await browser.bookmarks.update(bookmark.id, { url: resolvedUrl, title: newTitle });
                 } catch (e) {}
               }
               updatedCount++;
