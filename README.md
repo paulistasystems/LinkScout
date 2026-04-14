@@ -27,7 +27,8 @@ LinkScout makes it easy to save and organize links from any webpage. Whether you
 - 🔗 **Save Single Link** - Right-click on any link to save it directly
 - 📑 **Save & Close All Tabs** - Save all open tabs and close them (creates a session folder)
 - 🔍 **Search & Sort** - Realtime search and configurable sort order (Newest/Oldest) in Sidebar
-- 🗂️ **Sidebar Manager** - View, open, and manage bookmarks. Includes expand/collapse all, open all in tabs + auto-delete when opened
+- 🗂️ **Sidebar Manager** - View, open, and manage bookmarks. Includes keyboard shortcut (Ctrl+Shift+U / Cmd+Shift+U), expand/collapse all, open all in tabs + auto-delete when opened
+- 🔄 **Bidirectional Sync** - Fully synchronized bookmarks between the browser and IndexedDB, automatically handling deletions and items added via Firefox Sync.
 - 📁 **Smart Organization** - Links saved under `LinkScout / [Page Title] / [Link]`
 - 📂 **Auto Subfolders** - When saving more than X links, automatically creates numbered subfolders (e.g., 1-10, 11-20)
 - 🔄 **Duplicate Detection** - Automatically detects and skips duplicate links globally using IndexedDB. Resolves redirects (following `bit.ly` or `t.co` links to their final destination) and normalizes URLs by removing tracking parameters.
@@ -53,11 +54,11 @@ LinkScout makes it easy to save and organize links from any webpage. Whether you
 
 2. **Create the zip archive**
    ```bash
-   zip -r LinkScout-v2.7.11.zip manifest.json background.js content.js options.html options.js sidebar/ icons/ -x "*.DS_Store"
+   zip -r LinkScout-v2.7.17.zip manifest.json background.js content.js options.html options.js sidebar/ icons/ -x "*.DS_Store"
    ```
 
 3. **Output**
-   - This creates `LinkScout-v2.7.11.zip` in the project root directory.
+   - This creates `LinkScout-v2.7.17.zip` in the project root directory.
 
 ### Project Structure
 
@@ -115,7 +116,7 @@ This extension is written in plain JavaScript with no external dependencies or b
 3. All tabs are saved and closed, a new blank tab is created
 
 ### Sidebar Manager
-1. Click the LinkScout icon in the sidebar (or press Ctrl+B/Cmd+B and select LinkScout)
+1. Click the LinkScout icon in the toolbar or sidebar (or press **Ctrl+Shift+U** / **Cmd+Shift+U**)
 2. **Navigate**: Expand/collapse folders to see bookmarks
 3. **Open & Trash**: Click any bookmark to open it in a new tab and automatically move it to the "🗑️ Lixeira" folder
 4. **Open All**: Click "🚀 Abrir tudo" on a folder to open all bookmarks in tabs and move them to trash

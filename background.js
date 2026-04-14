@@ -44,6 +44,11 @@ browser.runtime.onInstalled.addListener((details) => {
   }
 });
 
+// Toggle sidebar when toolbar icon is clicked
+browser.browserAction.onClicked.addListener(() => {
+  browser.sidebarAction.toggle();
+});
+
 // Default settings
 const DEFAULT_SETTINGS = {
   rootFolder: 'LinkScout',
@@ -333,13 +338,14 @@ async function syncDatabaseWithBookmarks() {
       return { synced: 0, skipped: 0 };
     }
 
-    // Collect all bookmarks from LinkScout folder
+    // Collect all bookmarks from LinkScout folder (including root-level ones from Firefox Sync)
     const allBookmarks = await collectBookmarksFromFolder(linkScoutFolder.id, rootFolderName);
 
     let synced = 0;
     let skipped = 0;
     let purgedClones = 0;
     const seenUrls = new Set();
+    const liveBookmarkUrls = new Set();
 
     for (const bookmark of allBookmarks) {
       if (seenUrls.has(bookmark.url)) {
@@ -350,6 +356,7 @@ async function syncDatabaseWithBookmarks() {
         } catch (e) {}
       } else {
         seenUrls.add(bookmark.url);
+        liveBookmarkUrls.add(bookmark.url);
         // Safely attempt to add to IndexedDB
         const added = await addLinkToDatabase(bookmark.url, bookmark.title, bookmark.folderId, bookmark.folderPath);
         if (added) {
@@ -360,8 +367,43 @@ async function syncDatabaseWithBookmarks() {
       }
     }
 
-    console.log(`Sync complete: ${synced} added, ${skipped} already existed. Purged ${purgedClones} Firefox zombie clones.`);
-    return { synced, skipped, purgedClones };
+    // Reverse sync: purge IndexedDB records whose bookmarks were deleted via Firefox Sync
+    let purgedOrphans = 0;
+    try {
+      const db = await openDatabase();
+      const allRecords = await new Promise((resolve) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result || []);
+        request.onerror = () => resolve([]);
+      });
+
+      for (const record of allRecords) {
+        // Only purge records that belong to our LinkScout folder tree
+        if (record.folderPath && record.folderPath.startsWith(rootFolderName)) {
+          if (!liveBookmarkUrls.has(record.url)) {
+            // This record's bookmark no longer exists in Firefox — likely deleted via Sync
+            try {
+              await new Promise((resolve) => {
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                const store = tx.objectStore(STORE_NAME);
+                store.delete(record.id);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => resolve();
+              });
+              purgedOrphans++;
+              console.log(`[LinkScout] Reverse sync: Purged orphan from IndexedDB: ${record.url}`);
+            } catch (e) {}
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[LinkScout] Reverse sync error:', e);
+    }
+
+    console.log(`Sync complete: ${synced} added, ${skipped} already existed. Purged ${purgedClones} Firefox zombie clones, ${purgedOrphans} orphaned IndexedDB records.`);
+    return { synced, skipped, purgedClones, purgedOrphans };
   } catch (error) {
     console.error('Error syncing database with bookmarks:', error);
     return { synced: 0, skipped: 0, error: error.message };

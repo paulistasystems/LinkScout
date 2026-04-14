@@ -90,8 +90,37 @@ function showStatus(message, type) {
 }
 
 // Event listeners
-document.addEventListener('DOMContentLoaded', loadSettings);
+document.addEventListener('DOMContentLoaded', () => {
+    loadSettings();
+    loadShortcutDisplay();
+});
 document.getElementById('saveButton').addEventListener('click', saveSettings);
+
+// Load and display the current keyboard shortcut
+async function loadShortcutDisplay() {
+    const shortcutEl = document.getElementById('shortcutDisplay');
+    const manageLink = document.getElementById('manageShortcutsLink');
+
+    try {
+        const commands = await browser.commands.getAll();
+        const sidebarCmd = commands.find(c => c.name === '_execute_sidebar_action');
+        if (sidebarCmd && sidebarCmd.shortcut) {
+            shortcutEl.textContent = sidebarCmd.shortcut;
+        } else {
+            shortcutEl.textContent = 'Not set';
+            shortcutEl.style.color = '#999';
+        }
+    } catch (e) {
+        shortcutEl.textContent = 'Ctrl+Shift+U';
+    }
+
+    if (manageLink) {
+        manageLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            browser.tabs.create({ url: 'about:addons' });
+        });
+    }
+}
 
 // Force Full Scan Button
 document.getElementById('forceRescanButton').addEventListener('click', async () => {
