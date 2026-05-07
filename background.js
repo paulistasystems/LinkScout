@@ -1982,6 +1982,68 @@ async function getBookmarkTreeForSidebar() {
 // Run cleanup on startup - REMOVED
 // cleanupOldTrashItems();
 
+// Resolve all URLs in a folder (and its subfolders) by following redirects
+async function resolveFolderUrls(folderId) {
+  try {
+    const allNodes = await collectAllBookmarkNodes(folderId);
+    if (allNodes.length === 0) {
+      return { success: true, resolved: 0 };
+    }
+
+    let resolvedCount = 0;
+    for (const node of allNodes) {
+      try {
+        const resolvedUrl = await resolveUrl(node.url);
+        if (resolvedUrl && resolvedUrl !== node.url) {
+          await browser.bookmarks.update(node.id, {
+            url: resolvedUrl,
+            title: resolvedUrl
+          });
+          resolvedCount++;
+        }
+      } catch (e) {
+        console.error(`[LinkScout] Failed to resolve ${node.url}:`, e.message);
+      }
+    }
+
+    await updateFolderTimestamp(folderId);
+    return { success: true, resolved: resolvedCount };
+  } catch (error) {
+    console.error('[LinkScout] Error resolving folder URLs:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Resolve URLs for a list of bookmark IDs (used for virtual/domain-grouped folders)
+async function resolveMultipleUrls(bookmarkIds) {
+  try {
+    let resolvedCount = 0;
+    for (const id of bookmarkIds) {
+      try {
+        const bms = await browser.bookmarks.get(id);
+        if (!bms || bms.length === 0 || !bms[0].url) continue;
+
+        const bookmark = bms[0];
+        const resolvedUrl = await resolveUrl(bookmark.url);
+        if (resolvedUrl && resolvedUrl !== bookmark.url) {
+          await browser.bookmarks.update(id, {
+            url: resolvedUrl,
+            title: resolvedUrl
+          });
+          resolvedCount++;
+        }
+      } catch (e) {
+        console.error(`[LinkScout] Failed to resolve bookmark ${id}:`, e.message);
+      }
+    }
+
+    return { success: true, resolved: resolvedCount };
+  } catch (error) {
+    console.error('[LinkScout] Error resolving multiple URLs:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 // Listen for messages from options page and sidebar
 browser.runtime.onMessage.addListener(async (message, sender) => {
   if (message.action === 'reorganizeFolders') {
