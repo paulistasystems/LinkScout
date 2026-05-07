@@ -226,6 +226,14 @@ body {
     transform: rotate(15deg) scale(1.1);
 }
 
+.resolve-btn {
+    transition: all 0.2s, transform 0.3s;
+}
+
+.resolve-btn:hover {
+    transform: scale(1.1);
+}
+
 .folder-content {
     margin-left: 16px;
     padding-left: 10px;

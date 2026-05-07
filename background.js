@@ -664,210 +664,7 @@ async function deduplicateExistingDatabase() {
   }
 }
 
-// Resolve missing redirect URLs in background
-async function resolveExistingLinksBackgroundJob() {
-  try {
-    const db = await openDatabase();
 
-    // Get all records
-    const allRecords = await new Promise((resolve) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const store = tx.objectStore(STORE_NAME);
-      const request = store.getAll();
-      request.onsuccess = () => resolve(request.result || []);
-      request.onerror = () => resolve([]);
-    });
-
-    const settings = await ensureMigratedSettings();
-
-    if (!settings.enableUrlResolver) {
-      console.log('🛑 [LinkScout] URL Resolver está desativado nas preferências. Ignorando processo.');
-      return { checked: 0, updated: 0, removed: 0, skipped: true };
-    }
-
-    const aggregatorDomains = settings.aggregatorDomains;
-    const batchSize = settings.resolveBatchSize || 10;
-
-    // Filter out the records that need processing
-    let recordsToProcess = [];
-    for (const record of allRecords) {
-      const googleNewsHubs = ['/stories/', '/topics/', '/publications/', '/showcase', '/my/library', '/foryou', '/home'];
-      const isHub = (record.url.includes('news.google.com') && googleNewsHubs.some(hub => record.url.includes(hub))) || record.url.includes('accounts.google.com/SignOutOptions');
-
-      const pureRedirects = ['t.co/', 'bit.ly/', 'tinyurl.com/', 'lnkd.in/'];
-      const isPureRedirect = pureRedirects.some(domain => record.url.includes(domain));
-
-      // Auto-rescue da falha anterior: se for um artigo do Google ou um redirecionador curto e foi marcado como insolúvel, limpe a flag!
-      if (record.unresolvable && ((record.url.includes('news.google.com') && !isHub) || isPureRedirect)) {
-         record.unresolvable = false;
-         record.redirectResolved = false;
-      }
-      
-      // Auto-exclusão irreversível de Hub pages
-      if (isHub) {
-         record.deleteImmediately = true;
-         recordsToProcess.push(record);
-         continue;
-      }
-
-      const isAggregator = (aggregatorDomains.some(domain => record.url.includes(domain)) ||
-                           record.url.includes('news.google.com') ||
-                           record.url.includes('google.com/url')) && 
-                           !isHub;
-                           
-      if (record.redirectResolved && isAggregator && !record.unresolvable) {
-        console.log(`🔔 [LinkScout] URL Resolver: ${record.url} estava na fila de prontos, mas era agregador! Retornando pra fila de avaliação de segurança...`);
-        recordsToProcess.push(record);
-      } else if (!record.redirectResolved && !record.unresolvable) {
-        recordsToProcess.push(record);
-      }
-    }
-
-    if (recordsToProcess.length === 0) {
-      console.log('✅ [LinkScout] URL Resolver: Nenhum link aguardando checagem. Tudo limpo!');
-      return { checked: 0, updated: 0, removed: 0 };
-    }
-
-    console.log(`🚀 [LinkScout] URL Resolver: Varredura iniciada! Analisando pendentes (${recordsToProcess.length} links) em lotes de ${batchSize}...`);
-
-    let checkedCount = 0;
-    let updatedCount = 0;
-    let removedCount = 0;
-
-    for (let i = 0; i < recordsToProcess.length; i += batchSize) {
-      const batch = recordsToProcess.slice(i, i + batchSize);
-      console.log(`⏳ [LinkScout] Processando lote ${Math.floor(i / batchSize) + 1} de ${Math.ceil(recordsToProcess.length / batchSize)}...`);
-
-      const batchPromises = batch.map(async (record) => {
-        if (record.deleteImmediately) {
-          console.warn(`🗑️ [LinkScout] URL Resolver: Excluindo página vazia irrelevante do Google News: ${record.url}`);
-          await new Promise((resolve) => {
-            const tx = db.transaction(STORE_NAME, 'readwrite');
-            const store = tx.objectStore(STORE_NAME);
-            store.delete(record.id);
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => resolve();
-            tx.onabort = () => resolve();
-          });
-          if (record.folderId) {
-            try {
-              const children = await browser.bookmarks.getChildren(record.folderId);
-              const bookmark = children.find(c => c.url === record.url);
-              if (bookmark) await browser.bookmarks.remove(bookmark.id);
-            } catch (e) {}
-          }
-          removedCount++;
-          return;
-        }
-
-        console.log(`🔍 [LinkScout] URL Resolver: Buscando URL real de -> ${record.url} ...`);
-        
-        try {
-          // Small staggered delay to prevent bursts hitting rate limits immediately
-          await delay(Math.random() * 500);
-          
-          const resolvedUrl = await resolveUrl(record.url);
-          checkedCount++;
-
-          if (resolvedUrl !== record.url) {
-            console.log(`🎯 [LinkScout] URL Resolver: BINGO!\nORIGEM: ${record.url}\nDESTINO: ${resolvedUrl}`);
-            const isDuplicate = await isLinkDuplicate(resolvedUrl);
-
-            if (isDuplicate) {
-              console.warn(`🛑 [LinkScout] URL Resolver: Duplicata descoberta em tempo real! Nós já temos ${resolvedUrl} nos favoritos. Apagando clone originário de ${record.url}...`);
-              // Remove from IndexedDB
-              await new Promise((resolve, reject) => {
-                const tx = db.transaction(STORE_NAME, 'readwrite');
-                const store = tx.objectStore(STORE_NAME);
-                store.delete(record.id);
-                tx.oncomplete = () => resolve();
-                tx.onerror = () => reject(tx.error);
-                tx.onabort = () => reject(new Error('Transaction aborted'));
-              });
-
-              // Remove from Bookmark Tree
-              if (record.folderId) {
-                try {
-                  const children = await browser.bookmarks.getChildren(record.folderId);
-                  const bookmark = children.find(c => c.url === record.url);
-                  if (bookmark) await browser.bookmarks.remove(bookmark.id);
-                } catch (e) {}
-              }
-              removedCount++;
-              console.log(`🗑️ [LinkScout] URL Resolver: Desinfetado com sucesso! Arquivamos a duplicata ${resolvedUrl}`);
-            } else {
-              // Update existing record and bookmark
-              // Determine the best title:
-              // 1. If the record already has a real page title (from tab saves), keep it
-              // 2. If the title is just a URL, try to fetch the actual page title
-              // 3. Fall back to the resolved URL
-              const titleIsUrl = (record.title === record.url) || (record.title === record.originalUrl);
-              let newTitle = record.title;
-              if (titleIsUrl) {
-                const pageTitle = await fetchPageTitle(resolvedUrl);
-                newTitle = pageTitle || resolvedUrl;
-              }
-              await new Promise((resolve, reject) => {
-                const tx = db.transaction(STORE_NAME, 'readwrite');
-                const store = tx.objectStore(STORE_NAME);
-                const updatedRecord = { ...record, originalUrl: record.originalUrl || record.url, url: resolvedUrl, title: newTitle, redirectResolved: true };
-                store.put(updatedRecord);
-                tx.oncomplete = () => resolve();
-                tx.onerror = () => reject(tx.error);
-                tx.onabort = () => reject(new Error('Transaction aborted'));
-              });
-              
-              if (record.folderId) {
-                try {
-                  const children = await browser.bookmarks.getChildren(record.folderId);
-                  // Try finding bookmark by current URL, fall back to originalUrl
-                  let bookmark = children.find(c => c.url === record.url);
-                  if (!bookmark && record.originalUrl) {
-                    bookmark = children.find(c => c.url === record.originalUrl);
-                  }
-                  if (bookmark) await browser.bookmarks.update(bookmark.id, { url: resolvedUrl, title: newTitle });
-                } catch (e) {}
-              }
-              updatedCount++;
-              console.log(`✨ [LinkScout] URL Resolver: Sucesso absoluto! Favorito atualizado no banco limpo e desofuscado: ${resolvedUrl} (título: ${newTitle})`);
-            }
-          } else {
-            // URL unchanged, mark resolved
-            await new Promise((resolve, reject) => {
-              const tx = db.transaction(STORE_NAME, 'readwrite');
-              const store = tx.objectStore(STORE_NAME);
-              const updatedRecord = { ...record, redirectResolved: true, unresolvable: true };
-              store.put(updatedRecord);
-              tx.oncomplete = () => resolve();
-              tx.onerror = () => reject(tx.error);
-              tx.onabort = () => reject(new Error('Transaction aborted'));
-            });
-            console.log(`✅ [LinkScout] URL Resolver: Sem mudanças! Ele sempre foi puro: ${record.url} (ignorado daqui pra frente de verdade).`);
-          }
-        } catch (err) {
-          console.error(`❌ [LinkScout] Falha interna ao processar lote para URL ${record.url}`, err);
-        }
-      });
-
-      try {
-        await Promise.race([
-          Promise.all(batchPromises),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('BatchTimeout: As resoluções travaram ou demoraram demais.')), 25000))
-        ]);
-      } catch (batchError) {
-        console.error(`🚨 [LinkScout] Lote ${Math.floor(i / batchSize) + 1} sofreu um erro crítico e foi interrompido à força:`, batchError.message);
-      }
-      
-      await delay(1200); // Generous cooldown between batches so host machine breathes
-    }
-
-    console.log(`🏁 [LinkScout] URL Resolver Concluído! \n\n📊 Relatório do Job: \n- Links Checados: ${checkedCount} \n- Novos Links Puros (Atualizados): ${updatedCount}\n- Clones Destruídos: ${removedCount}`);
-    return { checked: checkedCount, updated: updatedCount, removed: removedCount };
-  } catch (error) {
-    console.error('[LinkScout] URL Resolver error:', error);
-    return { error: error.message };
-  }
-}
 
 let isBackgroundJobRunning = false;
 let isRestoringBookmarks = false;
@@ -883,10 +680,6 @@ async function runBackgroundVerification() {
   try {
     const dedupeResult = await deduplicateExistingDatabase();
     console.log('[LinkScout] Deduplication result:', dedupeResult);
-    
-    // Run URL resolver to fetch real destinations for existing shortlinks
-    const resolveResult = await resolveExistingLinksBackgroundJob();
-    console.log('[LinkScout] URL Resolver result:', resolveResult);
   } catch (error) {
     console.error('[LinkScout] Erro na verificação em background:', error);
   } finally {
@@ -2196,8 +1989,12 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
     return result;
   }
 
-  if (message.action === 'forceRescan') {
-    return await resolveExistingLinksBackgroundJob();
+  if (message.action === 'resolveFolder') {
+    return await resolveFolderUrls(message.folderId);
+  }
+
+  if (message.action === 'resolveMultipleUrls') {
+    return await resolveMultipleUrls(message.bookmarkIds);
   }
 
   // Sidebar message handlers

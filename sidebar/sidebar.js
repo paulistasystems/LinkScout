@@ -375,6 +375,12 @@ function createFolderElement(folder) {
     shuffleBtn.textContent = '🔀';
     actionsDiv.appendChild(shuffleBtn);
 
+    const resolveBtn = document.createElement('button');
+    resolveBtn.className = 'folder-action-btn resolve-btn';
+    resolveBtn.title = 'Resolve URLs';
+    resolveBtn.textContent = '🔍';
+    actionsDiv.appendChild(resolveBtn);
+
     const openAllBtn = document.createElement('button');
     openAllBtn.className = 'folder-action-btn open-all-btn';
     openAllBtn.title = 'Open all in tabs';
@@ -395,6 +401,11 @@ function createFolderElement(folder) {
             shuffleVirtualFolder(folderEl);
         });
 
+        resolveBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            resolveVirtualFolder(folder);
+        });
+
         openAllBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             openAllInVirtualFolder(folder);
@@ -408,6 +419,11 @@ function createFolderElement(folder) {
         shuffleBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             shuffleFolder(folder.id, folderEl);
+        });
+
+        resolveBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            resolveFolder(folder.id, folderEl);
         });
 
         openAllBtn.addEventListener('click', (e) => {
@@ -670,6 +686,51 @@ function shuffleVirtualFolder(folderEl) {
     }
     // Re-append in new order
     children.forEach(child => contentEl.appendChild(child));
+}
+
+// Resolve URLs in a real folder
+async function resolveFolder(folderId, folderEl) {
+    try {
+        const result = await browser.runtime.sendMessage({
+            action: 'resolveFolder',
+            folderId
+        });
+
+        if (result && result.success) {
+            await silentLoadBookmarks();
+            const updatedFolderEl = document.querySelector(`.folder[data-id="${folderId}"]`);
+            if (updatedFolderEl) {
+                updatedFolderEl.classList.remove('collapsed');
+            }
+        }
+    } catch (error) {
+        console.error('Error resolving folder:', error);
+    }
+}
+
+// Resolve URLs in a virtual folder
+async function resolveVirtualFolder(folder) {
+    const ids = collectIdsFromVirtualFolder(folder);
+    if (ids.length === 0) return;
+    
+    try {
+        const result = await browser.runtime.sendMessage({
+            action: 'resolveMultipleUrls',
+            bookmarkIds: ids
+        });
+
+        if (result && result.success) {
+            await silentLoadBookmarks();
+            // Re-expanding virtual folders after silentLoad might be tricky if IDs change,
+            // but we can try to re-expand it.
+            const updatedFolderEl = document.querySelector(`.folder[data-id="${folder.id}"]`);
+            if (updatedFolderEl) {
+                updatedFolderEl.classList.remove('collapsed');
+            }
+        }
+    } catch (e) {
+        console.error('Error resolving virtual folder:', e);
+    }
 }
 
 
