@@ -797,7 +797,16 @@ async function resolveExistingLinksBackgroundJob() {
               console.log(`🗑️ [LinkScout] URL Resolver: Desinfetado com sucesso! Arquivamos a duplicata ${resolvedUrl}`);
             } else {
               // Update existing record and bookmark
-              const newTitle = (record.title === record.url) ? resolvedUrl : record.title;
+              // Determine the best title:
+              // 1. If the record already has a real page title (from tab saves), keep it
+              // 2. If the title is just a URL, try to fetch the actual page title
+              // 3. Fall back to the resolved URL
+              const titleIsUrl = (record.title === record.url) || (record.title === record.originalUrl);
+              let newTitle = record.title;
+              if (titleIsUrl) {
+                const pageTitle = await fetchPageTitle(resolvedUrl);
+                newTitle = pageTitle || resolvedUrl;
+              }
               await new Promise((resolve, reject) => {
                 const tx = db.transaction(STORE_NAME, 'readwrite');
                 const store = tx.objectStore(STORE_NAME);
@@ -811,12 +820,16 @@ async function resolveExistingLinksBackgroundJob() {
               if (record.folderId) {
                 try {
                   const children = await browser.bookmarks.getChildren(record.folderId);
-                  const bookmark = children.find(c => c.url === record.url);
+                  // Try finding bookmark by current URL, fall back to originalUrl
+                  let bookmark = children.find(c => c.url === record.url);
+                  if (!bookmark && record.originalUrl) {
+                    bookmark = children.find(c => c.url === record.originalUrl);
+                  }
                   if (bookmark) await browser.bookmarks.update(bookmark.id, { url: resolvedUrl, title: newTitle });
                 } catch (e) {}
               }
               updatedCount++;
-              console.log(`✨ [LinkScout] URL Resolver: Sucesso absoluto! Favorito atualizado no banco limpo e desofuscado: ${resolvedUrl}`);
+              console.log(`✨ [LinkScout] URL Resolver: Sucesso absoluto! Favorito atualizado no banco limpo e desofuscado: ${resolvedUrl} (título: ${newTitle})`);
             }
           } else {
             // URL unchanged, mark resolved
@@ -979,6 +992,41 @@ function extractDomain(url) {
 // Delay function for rate limiting
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Try to fetch the page title from a URL by loading it and parsing <title>
+async function fetchPageTitle(url) {
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      redirect: 'follow',
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!response.ok) return null;
+
+    // Read only the first chunk of the response to find <title> without downloading the full page
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let html = '';
+
+    while (html.length < 50000) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      html += decoder.decode(value, { stream: true });
+
+      // Check if we have a complete <title> tag
+      const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+      if (match) {
+        reader.cancel();
+        const title = match[1].trim().replace(/\s+/g, ' ');
+        return title || null;
+      }
+    }
+    reader.cancel();
+    return null;
+  } catch (e) {
+    return null;
+  }
 }
 
 // Normalize URL by removing tracking parameters, fragments, and trailing slashes
@@ -1341,8 +1389,13 @@ async function createOrUpdateBookmark(parentId, title, url, index = undefined, f
   }
   const newBookmark = await browser.bookmarks.create(createOptions);
 
+  // Only mark as redirectResolved if the URL actually changed during resolution,
+  // or if we skipped resolution entirely (tabs already have final URLs).
+  // If resolveUrl returned the same URL (failed to resolve), let the background job retry.
+  const wasActuallyResolved = skipResolve || (resolvedUrl !== originalUrl);
+
   // Add to IndexedDB for global duplicate tracking with full metadata
-  await addLinkToDatabase(resolvedUrl, title, parentId, folderPath, originalUrl, true);
+  await addLinkToDatabase(resolvedUrl, title, parentId, folderPath, originalUrl, wasActuallyResolved);
 
   // Update folder timestamp
   await updateFolderTimestamp(parentId);
@@ -1957,6 +2010,82 @@ async function deleteFolderAndContents(folderId) {
   }
 }
 
+// Shuffle all bookmarks within a folder (and its numbered subfolders) randomly
+async function shuffleBookmarksInFolder(folderId) {
+  try {
+    // Collect all bookmark nodes from the folder (including numbered subfolders)
+    const allNodes = await collectAllBookmarkNodes(folderId);
+    if (allNodes.length <= 1) {
+      return { success: true, count: allNodes.length };
+    }
+
+    // Fisher-Yates shuffle
+    for (let i = allNodes.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [allNodes[i], allNodes[j]] = [allNodes[j], allNodes[i]];
+    }
+
+    // Get current settings for linksPerFolder
+    const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
+    const linksPerFolder = parseInt(settings.linksPerFolder, 10) || 10;
+
+    // Get existing children to find old subfolders
+    const children = await browser.bookmarks.getChildren(folderId);
+    const oldSubfolders = children.filter(c => !c.url && isNumberedSubfolder(c.title));
+
+    if (allNodes.length > linksPerFolder) {
+      // Redistribute shuffled bookmarks into numbered subfolders
+      const chunks = [];
+      for (let i = 0; i < allNodes.length; i += linksPerFolder) {
+        chunks.push(allNodes.slice(i, i + linksPerFolder));
+      }
+
+      for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+        const chunk = chunks[chunkIndex];
+        const startNum = chunkIndex * linksPerFolder + 1;
+        const endNum = startNum + chunk.length - 1;
+        const folderName = `${startNum}-${endNum}`;
+
+        let subFolder = oldSubfolders.find(f => f.title === folderName);
+        if (!subFolder) {
+          subFolder = await findOrCreateFolder(folderId, folderName);
+        } else {
+          oldSubfolders.splice(oldSubfolders.indexOf(subFolder), 1);
+        }
+
+        for (let i = 0; i < chunk.length; i++) {
+          const node = chunk[i];
+          await browser.bookmarks.move(node.id, { parentId: subFolder.id, index: i });
+        }
+      }
+    } else {
+      // All fit in the root folder, move them directly
+      for (let i = 0; i < allNodes.length; i++) {
+        const node = allNodes[i];
+        await browser.bookmarks.move(node.id, { parentId: folderId, index: i });
+      }
+    }
+
+    // Clean up old empty subfolders
+    for (const old of oldSubfolders) {
+      try {
+        const remaining = await browser.bookmarks.getChildren(old.id);
+        if (remaining.length === 0) {
+          await browser.bookmarks.remove(old.id);
+        }
+      } catch (e) {}
+    }
+
+    // Update folder timestamp
+    await updateFolderTimestamp(folderId);
+
+    return { success: true, count: allNodes.length };
+  } catch (error) {
+    console.error('Error shuffling folder:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 // Build bookmark tree for sidebar (sorted by last modified)
 async function getBookmarkTreeForSidebar() {
   try {
@@ -2086,6 +2215,10 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
 
   if (message.action === 'openMultipleAndTrash') {
     return await openMultipleAndTrash(message.bookmarkIds);
+  }
+
+  if (message.action === 'shuffleFolder') {
+    return await shuffleBookmarksInFolder(message.folderId);
   }
 
   if (message.action === 'deleteFolder') {

@@ -218,6 +218,14 @@ body {
     background: rgba(102, 126, 234, 0.7);
 }
 
+.shuffle-btn {
+    transition: all 0.2s, transform 0.3s;
+}
+
+.shuffle-btn:hover {
+    transform: rotate(15deg) scale(1.1);
+}
+
 .folder-content {
     margin-left: 16px;
     padding-left: 10px;

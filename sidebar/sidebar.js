@@ -369,6 +369,12 @@ function createFolderElement(folder) {
     const actionsDiv = document.createElement('div');
     actionsDiv.className = 'folder-actions';
 
+    const shuffleBtn = document.createElement('button');
+    shuffleBtn.className = 'folder-action-btn shuffle-btn';
+    shuffleBtn.title = 'Shuffle bookmarks';
+    shuffleBtn.textContent = '🔀';
+    actionsDiv.appendChild(shuffleBtn);
+
     const openAllBtn = document.createElement('button');
     openAllBtn.className = 'folder-action-btn open-all-btn';
     openAllBtn.title = 'Open all in tabs';
@@ -384,6 +390,11 @@ function createFolderElement(folder) {
     headerEl.appendChild(actionsDiv);
 
     if (isVirtualFolder) {
+        shuffleBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            shuffleVirtualFolder(folderEl);
+        });
+
         openAllBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             openAllInVirtualFolder(folder);
@@ -394,6 +405,11 @@ function createFolderElement(folder) {
             deleteVirtualFolder(folder);
         });
     } else {
+        shuffleBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            shuffleFolder(folder.id, folderEl);
+        });
+
         openAllBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             openAllInFolder(folder.id);
@@ -616,6 +632,44 @@ async function deleteVirtualFolder(folder) {
         } catch (e) { /* ignore */ }
     }
     removeElementAndUpdateCounts(`.folder[data-id="${folder.id}"]`, true);
+}
+
+// Shuffle bookmarks in a real folder (persists to bookmarks API)
+async function shuffleFolder(folderId, folderEl) {
+    try {
+        const result = await browser.runtime.sendMessage({
+            action: 'shuffleFolder',
+            folderId
+        });
+
+        if (result && result.success) {
+            // Reload the folder content from the updated data
+            await silentLoadBookmarks();
+
+            // Re-expand the shuffled folder
+            const updatedFolderEl = document.querySelector(`.folder[data-id="${folderId}"]`);
+            if (updatedFolderEl) {
+                updatedFolderEl.classList.remove('collapsed');
+            }
+        }
+    } catch (error) {
+        console.error('Error shuffling folder:', error);
+    }
+}
+
+// Shuffle bookmarks in a virtual folder (DOM only, not persisted)
+function shuffleVirtualFolder(folderEl) {
+    const contentEl = folderEl.querySelector('.folder-content');
+    if (!contentEl) return;
+
+    const children = Array.from(contentEl.children);
+    // Fisher-Yates shuffle
+    for (let i = children.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [children[i], children[j]] = [children[j], children[i]];
+    }
+    // Re-append in new order
+    children.forEach(child => contentEl.appendChild(child));
 }
 
 
