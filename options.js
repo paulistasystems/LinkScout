@@ -27,6 +27,7 @@ async function loadSettings() {
 // Save settings
 async function saveSettings() {
     const linksPerFolder = parseInt(document.getElementById('linksPerFolder').value, 10);
+    const newSettings = {
         rootFolder: document.getElementById('rootFolder').value.trim() || 'LinkScout',
         bookmarkLocation: document.getElementById('bookmarkLocation').value,
         linksPerFolder: linksPerFolder > 0 ? linksPerFolder : 10
