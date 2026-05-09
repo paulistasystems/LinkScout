@@ -690,6 +690,12 @@ function shuffleVirtualFolder(folderEl) {
 
 // Resolve URLs in a real folder
 async function resolveFolder(folderId, folderEl) {
+    const resolveBtn = folderEl.querySelector('.resolve-btn');
+    if (resolveBtn) {
+        resolveBtn.disabled = true;
+        resolveBtn.classList.add('resolving');
+        resolveBtn.textContent = '';
+    }
     try {
         const result = await browser.runtime.sendMessage({
             action: 'resolveFolder',
@@ -701,10 +707,17 @@ async function resolveFolder(folderId, folderEl) {
             const updatedFolderEl = document.querySelector(`.folder[data-id="${folderId}"]`);
             if (updatedFolderEl) {
                 updatedFolderEl.classList.remove('collapsed');
+                showResolveResult(updatedFolderEl, result);
             }
         }
     } catch (error) {
         console.error('Error resolving folder:', error);
+    } finally {
+        if (resolveBtn) {
+            resolveBtn.disabled = false;
+            resolveBtn.classList.remove('resolving');
+            resolveBtn.textContent = '🔍';
+        }
     }
 }
 
@@ -712,7 +725,14 @@ async function resolveFolder(folderId, folderEl) {
 async function resolveVirtualFolder(folder) {
     const ids = collectIdsFromVirtualFolder(folder);
     if (ids.length === 0) return;
-    
+
+    const folderEl = document.querySelector(`.folder[data-id="${folder.id}"]`);
+    const resolveBtn = folderEl ? folderEl.querySelector('.resolve-btn') : null;
+    if (resolveBtn) {
+        resolveBtn.disabled = true;
+        resolveBtn.classList.add('resolving');
+        resolveBtn.textContent = '';
+    }
     try {
         const result = await browser.runtime.sendMessage({
             action: 'resolveMultipleUrls',
@@ -721,16 +741,43 @@ async function resolveVirtualFolder(folder) {
 
         if (result && result.success) {
             await silentLoadBookmarks();
-            // Re-expanding virtual folders after silentLoad might be tricky if IDs change,
-            // but we can try to re-expand it.
             const updatedFolderEl = document.querySelector(`.folder[data-id="${folder.id}"]`);
             if (updatedFolderEl) {
                 updatedFolderEl.classList.remove('collapsed');
+                showResolveResult(updatedFolderEl, result);
             }
         }
     } catch (e) {
         console.error('Error resolving virtual folder:', e);
+    } finally {
+        if (resolveBtn) {
+            resolveBtn.disabled = false;
+            resolveBtn.classList.remove('resolving');
+            resolveBtn.textContent = '🔍';
+        }
     }
+}
+
+// Show resolve result badge on folder header
+function showResolveResult(folderEl, result) {
+    const header = folderEl.querySelector('.folder-header');
+    if (!header) return;
+
+    const badge = document.createElement('span');
+    badge.className = 'resolve-result-badge';
+    if (result.resolved > 0) {
+        badge.textContent = `✅ ${result.resolved} resolvido(s)`;
+        badge.classList.add('success');
+    } else {
+        badge.textContent = '✅ Tudo atualizado';
+        badge.classList.add('neutral');
+    }
+    header.appendChild(badge);
+
+    setTimeout(() => {
+        badge.classList.add('fade-out');
+        setTimeout(() => badge.remove(), 500);
+    }, 3000);
 }
 
 

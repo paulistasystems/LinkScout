@@ -917,6 +917,9 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
     let tabId = null;
     let childTabIds = [];
 
+    console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Iniciando para ${url}`);
+    console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Domínios agregadores ativos: ${aggregatorDomains.join(', ')}`);
+
     function cleanup(finalUrl) {
       if (resolved) return;
       resolved = true;
@@ -931,14 +934,14 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
         browser.tabs.remove(cId).catch(() => {});
       }
       
-      console.log(`[LinkScout] Aba Fantasma: Resolvido final -> ${finalUrl}`);
+      console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Resolvido final -> ${finalUrl}`);
       resolve(normalizeUrl(finalUrl));
     }
 
     function tabCreatedListener(tab) {
       // Rastrear abas filhas e netas geradas pela aba rastreadora original
       if (tab.openerTabId === tabId || childTabIds.includes(tab.openerTabId)) {
-         console.log(`[LinkScout] Aba Fantasma: Interceptou nova aba filha gerada: ${tab.id}`);
+         console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Interceptou nova aba filha gerada: ${tab.id}`);
          childTabIds.push(tab.id);
       }
     }
@@ -958,7 +961,7 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
            });
            
            if (!isStillAggregator) {
-             console.log(`[LinkScout] Aba Fantasma: Detectou redirecionamento externo na aba ${updatedTabId}: ${updatedTab.url}`);
+             console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Detectou redirecionamento externo na aba ${updatedTabId}: ${updatedTab.url}`);
              cleanup(updatedTab.url);
            }
         }
@@ -990,7 +993,7 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
       // Timeout de 15 segundos para evitar phantom tabs acumuladas
       fallbackTimeout = setTimeout(() => {
         if (resolved) return;
-        console.warn(`[LinkScout] Aba Fantasma: Timeout alcançado para ${url}. Fechando todas as abas vinculadas.`);
+        console.warn(`[LinkScout 🔍 Resolve] Phantom Tab: ⏱️ Timeout alcançado (15s) para ${url}. Fechando todas as abas vinculadas.`);
         browser.tabs.get(tabId).then(t => {
           // Fallback: se travou no redirecionador nativo do google, extrair param
           if (t.url && t.url.includes('google.com/url')) {
@@ -998,7 +1001,7 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
                let u = new URL(t.url);
                let q = u.searchParams.get('q') || u.searchParams.get('url');
                if (q) {
-                 console.log(`[LinkScout] Aba Fantasma: Extração manual segura via parametro q para ${t.url}`);
+                 console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Extração manual segura via parametro q para ${t.url}`);
                  return cleanup(q);
                }
              } catch(e) {}
@@ -1009,7 +1012,7 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
         });
       }, 15000);
     } catch (e) {
-      console.error("[LinkScout] Aba Fantasma: Erro crítico ao criar aba raiz:", e);
+      console.error("[LinkScout 🔍 Resolve] Phantom Tab: ❌ Erro crítico ao criar aba raiz:", e);
       cleanup(url);
     }
   });
@@ -1018,18 +1021,21 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
 // Resolve URL by following redirects via HEAD request (with timeout)
 // Falls back to normalizeUrl if the request fails
 async function resolveUrl(url, depth = 0) {
+  console.log(`[LinkScout 🔍 Resolve] resolveUrl: Iniciando (depth=${depth}) para ${url}`);
+  
   if (depth > 10) {
-    console.warn(`[LinkScout] resolveUrl: Limite de recursão alcançado para ${url}`);
+    console.warn(`[LinkScout 🔍 Resolve] resolveUrl: ⚠️ Limite de recursão alcançado para ${url}`);
     return url;
   }
   
   // Try static extraction first to bypass warning pages and save time (Facebook, Reddit, YT, Google tracking)
   const extractResult = extractTargetFromRedirectUrl(url);
   if (extractResult && extractResult !== url) {
-    console.log(`[LinkScout] resolveUrl: Extração direta bem-sucedida do ofuscador para ${url} -> ${extractResult}`);
+    console.log(`[LinkScout 🔍 Resolve] resolveUrl: ✅ Extração estática bem-sucedida: ${url} -> ${extractResult}`);
     // Recurse to handle chained redirects!
     return resolveUrl(extractResult, depth + 1);
   } else if (extractResult === url) {
+    console.log(`[LinkScout 🔍 Resolve] resolveUrl: Extração estática retornou mesma URL, sem redirecionamento`);
     return url;
   }
 
@@ -1048,13 +1054,12 @@ async function resolveUrl(url, depth = 0) {
 
   // Usar Aba Fantasma para links agregadores que podem rodar via Javascript ou bloquear HEAD
   if (isAggregator) {
-    console.log(`[LinkScout] resolveUrl: Detectado link ofuscado/agregador. Acionando Aba Fantasma para ${url}`);
+    console.log(`[LinkScout 🔍 Resolve] resolveUrl: 🔮 Detectado agregador -> Acionando Phantom Tab para ${url}`);
     const effectiveDomains = [...aggregatorDomains, 'news.google.com', 'google.com/url'];
     return await resolveUrlWithPhantomTab(url, effectiveDomains);
   }
 
-  console.log(`[LinkScout] resolveUrl: Iniciando requisição HEAD para ${url}`);
-  console.log(`[LinkScout] resolveUrl: Iniciando requisição para ${url}`);
+  console.log(`[LinkScout 🔍 Resolve] resolveUrl: 🌐 Iniciando requisição HEAD para ${url}`);
   try {
     let finalUrl = url;
     let headFailed = false;
@@ -1068,13 +1073,13 @@ async function resolveUrl(url, depth = 0) {
       finalUrl = response.url;
       headResponseOk = response.ok;
     } catch (e) {
-      console.warn(`[LinkScout] resolveUrl: HEAD falhou para ${url}:`, e.message);
+      console.warn(`[LinkScout 🔍 Resolve] resolveUrl: ⚠️ HEAD falhou para ${url}:`, e.message);
       headFailed = true;
     }
 
     // Fallback: se HEAD falhou, retornou a mesma URL c/ erro nativo, ou for sabidamente um redirecionador HTML (t.co)
     if (headFailed || (finalUrl === url && (!headResponseOk || url.includes('t.co/') || url.includes('bit.ly/')))) {
-        console.log(`[LinkScout] resolveUrl: Tentando GET de resgate para ${url}...`);
+        console.log(`[LinkScout 🔍 Resolve] resolveUrl: 🔄 Tentando GET fallback para ${url}...`);
         const getController = new AbortController();
         const getTimeout = setTimeout(() => { getController.abort(); }, 6000);
         
@@ -1102,16 +1107,16 @@ async function resolveUrl(url, depth = 0) {
                }
             }
         } catch (e) {
-            console.error(`[LinkScout] resolveUrl: GET de resgate falhou para ${url}:`, e.message);
+            console.error(`[LinkScout 🔍 Resolve] resolveUrl: ❌ GET fallback falhou para ${url}:`, e.message);
         } finally {
             clearTimeout(getTimeout);
         }
     }
 
-    console.log(`[LinkScout] resolveUrl: Sucesso. URL final de ${url} -> ${finalUrl}`);
+    console.log(`[LinkScout 🔍 Resolve] resolveUrl: ✅ Sucesso. ${url} -> ${finalUrl}`);
     return normalizeUrl(finalUrl);
   } catch (error) {
-    console.error(`[LinkScout] resolveUrl: Erro irreversível ao resolver ${url}:`, error.message);
+    console.error(`[LinkScout 🔍 Resolve] resolveUrl: ❌ Erro irreversível ao resolver ${url}:`, error.message);
     return normalizeUrl(url);
   }
 }
@@ -1494,7 +1499,7 @@ function isNumberedSubfolder(title) {
   return /^\d+-\d+$/.test(title);
 }
 
-// Collect ALL bookmark nodes
+// Collect ALL bookmark nodes (recursively from all subfolders, not just numbered ones)
 async function collectAllBookmarkNodes(folderId) {
   const bookmarks = [];
   const children = await browser.bookmarks.getChildren(folderId);
@@ -1502,13 +1507,10 @@ async function collectAllBookmarkNodes(folderId) {
   for (const child of children) {
     if (child.url) {
       bookmarks.push(child);
-    } else if (isNumberedSubfolder(child.title)) {
-      const subChildren = await browser.bookmarks.getChildren(child.id);
-      for (const subChild of subChildren) {
-        if (subChild.url) {
-          bookmarks.push(subChild);
-        }
-      }
+    } else {
+      // Recurse into ALL subfolders (numbered or otherwise)
+      const subBookmarks = await collectAllBookmarkNodes(child.id);
+      bookmarks.push(...subBookmarks);
     }
   }
   return bookmarks;
@@ -1984,62 +1986,93 @@ async function getBookmarkTreeForSidebar() {
 
 // Resolve all URLs in a folder (and its subfolders) by following redirects
 async function resolveFolderUrls(folderId) {
+  console.log(`[LinkScout 🔍 Resolve] ===== INÍCIO: Resolução de pasta (folderId: ${folderId}) =====`);
   try {
     const allNodes = await collectAllBookmarkNodes(folderId);
+    console.log(`[LinkScout 🔍 Resolve] Encontrados ${allNodes.length} bookmarks na pasta e subpastas`);
+    
     if (allNodes.length === 0) {
-      return { success: true, resolved: 0 };
+      console.log(`[LinkScout 🔍 Resolve] Pasta vazia, nada a resolver.`);
+      return { success: true, resolved: 0, total: 0 };
     }
 
     let resolvedCount = 0;
-    for (const node of allNodes) {
+    let errorCount = 0;
+    let skippedCount = 0;
+    
+    for (let i = 0; i < allNodes.length; i++) {
+      const node = allNodes[i];
+      console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] Resolvendo: ${node.url}`);
       try {
         const resolvedUrl = await resolveUrl(node.url);
         if (resolvedUrl && resolvedUrl !== node.url) {
+          console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] ✅ Resolvido: ${node.url} -> ${resolvedUrl}`);
           await browser.bookmarks.update(node.id, {
             url: resolvedUrl,
             title: resolvedUrl
           });
           resolvedCount++;
+        } else {
+          console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] ⏭️ Sem alteração: ${node.url}`);
+          skippedCount++;
         }
       } catch (e) {
-        console.error(`[LinkScout] Failed to resolve ${node.url}:`, e.message);
+        errorCount++;
+        console.error(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] ❌ Falha ao resolver ${node.url}:`, e.message);
       }
     }
 
     await updateFolderTimestamp(folderId);
-    return { success: true, resolved: resolvedCount };
+    console.log(`[LinkScout 🔍 Resolve] ===== FIM: ${resolvedCount} resolvidos, ${skippedCount} sem alteração, ${errorCount} erros de ${allNodes.length} total =====`);
+    return { success: true, resolved: resolvedCount, total: allNodes.length, errors: errorCount };
   } catch (error) {
-    console.error('[LinkScout] Error resolving folder URLs:', error);
+    console.error('[LinkScout 🔍 Resolve] ❌ Erro crítico na resolução de pasta:', error);
     return { success: false, error: error.message };
   }
 }
 
 // Resolve URLs for a list of bookmark IDs (used for virtual/domain-grouped folders)
 async function resolveMultipleUrls(bookmarkIds) {
+  console.log(`[LinkScout 🔍 Resolve] ===== INÍCIO: Resolução múltipla (${bookmarkIds.length} IDs) =====`);
   try {
     let resolvedCount = 0;
-    for (const id of bookmarkIds) {
+    let errorCount = 0;
+    let skippedCount = 0;
+    
+    for (let i = 0; i < bookmarkIds.length; i++) {
+      const id = bookmarkIds[i];
       try {
         const bms = await browser.bookmarks.get(id);
-        if (!bms || bms.length === 0 || !bms[0].url) continue;
+        if (!bms || bms.length === 0 || !bms[0].url) {
+          console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] ⏭️ Bookmark ${id} não encontrado ou sem URL`);
+          skippedCount++;
+          continue;
+        }
 
         const bookmark = bms[0];
+        console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] Resolvendo: ${bookmark.url}`);
         const resolvedUrl = await resolveUrl(bookmark.url);
         if (resolvedUrl && resolvedUrl !== bookmark.url) {
+          console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] ✅ Resolvido: ${bookmark.url} -> ${resolvedUrl}`);
           await browser.bookmarks.update(id, {
             url: resolvedUrl,
             title: resolvedUrl
           });
           resolvedCount++;
+        } else {
+          console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] ⏭️ Sem alteração: ${bookmark.url}`);
+          skippedCount++;
         }
       } catch (e) {
-        console.error(`[LinkScout] Failed to resolve bookmark ${id}:`, e.message);
+        errorCount++;
+        console.error(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] ❌ Falha no bookmark ${id}:`, e.message);
       }
     }
 
-    return { success: true, resolved: resolvedCount };
+    console.log(`[LinkScout 🔍 Resolve] ===== FIM: ${resolvedCount} resolvidos, ${skippedCount} sem alteração, ${errorCount} erros de ${bookmarkIds.length} total =====`);
+    return { success: true, resolved: resolvedCount, total: bookmarkIds.length, errors: errorCount };
   } catch (error) {
-    console.error('[LinkScout] Error resolving multiple URLs:', error);
+    console.error('[LinkScout 🔍 Resolve] ❌ Erro crítico na resolução múltipla:', error);
     return { success: false, error: error.message };
   }
 }
@@ -2151,6 +2184,12 @@ browser.contextMenus.onClicked.addListener(async (info, tab) => {
     }
 
     if (links.length > 0) {
+      // Prepend the origin page URL as the first entry for reference
+      if (tab.url && tab.url.startsWith('http')) {
+        links.unshift(tab.url);
+        console.log(`[LinkScout] Origem da seleção adicionada: ${tab.url}`);
+      }
+
       // Load settings
       const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
 
