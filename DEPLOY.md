@@ -27,7 +27,7 @@ Após gerar o pacote, registre a nova versão no histórico do Git.
 VERSION=$(grep '"version"' manifest.json | cut -d '"' -f 4)
 git add manifest.json
 git commit -m "Release v$VERSION"
-git push origin master
+git push origin main
 ```
 
 ---

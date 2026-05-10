@@ -288,6 +288,45 @@ async function removeLinkFromDatabase(url) {
   }
 }
 
+// Update a link's URL in IndexedDB after resolution
+async function updateLinkUrlInDatabase(oldUrl, newUrl, newTitle) {
+  try {
+    const db = await openDatabase();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const index = store.index('url');
+      const getRequest = index.get(oldUrl);
+
+      getRequest.onsuccess = () => {
+        const record = getRequest.result;
+        if (record) {
+          const updatedRecord = {
+            ...record,
+            originalUrl: record.originalUrl || oldUrl,
+            url: newUrl,
+            title: newTitle || record.title,
+            redirectResolved: true
+          };
+          const putRequest = store.put(updatedRecord);
+          putRequest.onsuccess = () => resolve(true);
+          putRequest.onerror = () => {
+            // If put fails (e.g. unique constraint on new URL), delete old and skip
+            console.warn(`[LinkScout] updateLinkUrlInDatabase: put failed for ${newUrl}, likely duplicate`);
+            resolve(false);
+          };
+        } else {
+          resolve(false);
+        }
+      };
+      getRequest.onerror = () => resolve(false);
+    });
+  } catch (error) {
+    console.error('Error updating link URL in database:', error);
+    return false;
+  }
+}
+
 // Recursively collect all bookmarks from a folder and its subfolders
 async function collectBookmarksFromFolder(folderId, folderPath = '') {
   const bookmarks = [];
@@ -482,8 +521,14 @@ async function buildFolderPathFromNode(removeInfo) {
 }
 
 let syncTimeoutId = null;
+let isResolvingUrls = false;
 
 function requestDatabaseSync() {
+  // Suppress sync during URL resolution to prevent race conditions with dedup
+  if (isResolvingUrls) {
+    console.log('[LinkScout] Sync suprimido: resolução de URLs em andamento.');
+    return;
+  }
   if (syncTimeoutId) clearTimeout(syncTimeoutId);
   syncTimeoutId = setTimeout(async () => {
     syncTimeoutId = null;
@@ -2030,6 +2075,7 @@ async function getBookmarkTreeForSidebar() {
 // Resolve all URLs in a folder (and its subfolders) by following redirects
 async function resolveFolderUrls(folderId) {
   console.log(`[LinkScout 🔍 Resolve] ===== INÍCIO: Resolução de pasta (folderId: ${folderId}) =====`);
+  isResolvingUrls = true;
   try {
     const allNodes = await collectAllBookmarkNodes(folderId);
     console.log(`[LinkScout 🔍 Resolve] Encontrados ${allNodes.length} bookmarks na pasta e subpastas`);
@@ -2049,11 +2095,15 @@ async function resolveFolderUrls(folderId) {
       try {
         const resolvedUrl = await resolveUrl(node.url);
         if (resolvedUrl && resolvedUrl !== node.url) {
+          // Preserve the original title if it's meaningful (not just the old URL)
+          const newTitle = (node.title && node.title !== node.url) ? node.title : resolvedUrl;
           console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] ✅ Resolvido: ${node.url} -> ${resolvedUrl}`);
           await browser.bookmarks.update(node.id, {
             url: resolvedUrl,
-            title: resolvedUrl
+            title: newTitle
           });
+          // Keep IndexedDB in sync to prevent dedup conflicts
+          await updateLinkUrlInDatabase(node.url, resolvedUrl, newTitle);
           resolvedCount++;
         } else {
           console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] ⏭️ Sem alteração: ${node.url}`);
@@ -2063,6 +2113,8 @@ async function resolveFolderUrls(folderId) {
         errorCount++;
         console.error(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] ❌ Falha ao resolver ${node.url}:`, e.message);
       }
+      // Rate-limit between resolutions to avoid network congestion
+      if (i < allNodes.length - 1) await delay(200);
     }
 
     await updateFolderTimestamp(folderId);
@@ -2071,12 +2123,17 @@ async function resolveFolderUrls(folderId) {
   } catch (error) {
     console.error('[LinkScout 🔍 Resolve] ❌ Erro crítico na resolução de pasta:', error);
     return { success: false, error: error.message };
+  } finally {
+    isResolvingUrls = false;
+    // Trigger a single sync now that resolution is complete
+    requestDatabaseSync();
   }
 }
 
 // Resolve URLs for a list of bookmark IDs (used for virtual/domain-grouped folders)
 async function resolveMultipleUrls(bookmarkIds) {
   console.log(`[LinkScout 🔍 Resolve] ===== INÍCIO: Resolução múltipla (${bookmarkIds.length} IDs) =====`);
+  isResolvingUrls = true;
   try {
     let resolvedCount = 0;
     let errorCount = 0;
@@ -2096,11 +2153,15 @@ async function resolveMultipleUrls(bookmarkIds) {
         console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] Resolvendo: ${bookmark.url}`);
         const resolvedUrl = await resolveUrl(bookmark.url);
         if (resolvedUrl && resolvedUrl !== bookmark.url) {
+          // Preserve the original title if it's meaningful (not just the old URL)
+          const newTitle = (bookmark.title && bookmark.title !== bookmark.url) ? bookmark.title : resolvedUrl;
           console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] ✅ Resolvido: ${bookmark.url} -> ${resolvedUrl}`);
           await browser.bookmarks.update(id, {
             url: resolvedUrl,
-            title: resolvedUrl
+            title: newTitle
           });
+          // Keep IndexedDB in sync to prevent dedup conflicts
+          await updateLinkUrlInDatabase(bookmark.url, resolvedUrl, newTitle);
           resolvedCount++;
         } else {
           console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] ⏭️ Sem alteração: ${bookmark.url}`);
@@ -2110,6 +2171,8 @@ async function resolveMultipleUrls(bookmarkIds) {
         errorCount++;
         console.error(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] ❌ Falha no bookmark ${id}:`, e.message);
       }
+      // Rate-limit between resolutions to avoid network congestion
+      if (i < bookmarkIds.length - 1) await delay(200);
     }
 
     console.log(`[LinkScout 🔍 Resolve] ===== FIM: ${resolvedCount} resolvidos, ${skippedCount} sem alteração, ${errorCount} erros de ${bookmarkIds.length} total =====`);
@@ -2117,6 +2180,10 @@ async function resolveMultipleUrls(bookmarkIds) {
   } catch (error) {
     console.error('[LinkScout 🔍 Resolve] ❌ Erro crítico na resolução múltipla:', error);
     return { success: false, error: error.message };
+  } finally {
+    isResolvingUrls = false;
+    // Trigger a single sync now that resolution is complete
+    requestDatabaseSync();
   }
 }
 
