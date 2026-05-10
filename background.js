@@ -2085,11 +2085,33 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
   }
 
   if (message.action === 'resolveFolder') {
-    return await resolveFolderUrls(message.folderId);
+    // Return immediately to avoid Firefox message port timeout on long-running operations.
+    // The actual work is done asynchronously and the result is broadcast back.
+    const folderId = message.folderId;
+    resolveFolderUrls(folderId).then(result => {
+      browser.runtime.sendMessage({
+        action: 'resolveComplete',
+        resolveType: 'folder',
+        folderId: folderId,
+        result: result
+      }).catch(() => {}); // Sidebar may be closed
+    });
+    return { started: true };
   }
 
   if (message.action === 'resolveMultipleUrls') {
-    return await resolveMultipleUrls(message.bookmarkIds);
+    // Return immediately to avoid Firefox message port timeout on long-running operations.
+    const bookmarkIds = message.bookmarkIds;
+    const virtualFolderId = message.virtualFolderId || null;
+    resolveMultipleUrls(bookmarkIds).then(result => {
+      browser.runtime.sendMessage({
+        action: 'resolveComplete',
+        resolveType: 'virtual',
+        virtualFolderId: virtualFolderId,
+        result: result
+      }).catch(() => {}); // Sidebar may be closed
+    });
+    return { started: true };
   }
 
   // Sidebar message handlers
@@ -2185,9 +2207,21 @@ browser.contextMenus.onClicked.addListener(async (info, tab) => {
 
     if (links.length > 0) {
       // Prepend the origin page URL as the first entry for reference
-      if (tab.url && tab.url.startsWith('http')) {
-        links.unshift(tab.url);
-        console.log(`[LinkScout] Origem da seleção adicionada: ${tab.url}`);
+      // Use multiple fallbacks: info.pageUrl (context menu API), tab.url, or explicit tab query
+      let originUrl = info.pageUrl || tab.url;
+      if (!originUrl && tab.id) {
+        try {
+          const freshTab = await browser.tabs.get(tab.id);
+          originUrl = freshTab.url;
+          console.log(`[LinkScout] Origem obtida via tabs.get(): ${originUrl}`);
+        } catch (e) {
+          console.warn(`[LinkScout] Falha ao obter URL da aba:`, e.message);
+        }
+      }
+      console.log(`[LinkScout] Origem debug: info.pageUrl=${info.pageUrl}, tab.url=${tab.url}, originUrl=${originUrl}`);
+      if (originUrl && originUrl.startsWith('http')) {
+        links.unshift(originUrl);
+        console.log(`[LinkScout] Origem da seleção adicionada: ${originUrl}`);
       }
 
       // Load settings

@@ -1,5 +1,48 @@
 // LinkScout Sidebar Script
 
+// Pending resolve operations — maps a resolve key to { resolveBtn, folderId }
+const pendingResolves = new Map();
+
+// Listen for resolveComplete broadcasts from the background script.
+// This avoids Firefox's message port timeout on long-running resolve operations.
+browser.runtime.onMessage.addListener((message) => {
+    if (message.action !== 'resolveComplete') return;
+
+    const result = message.result;
+    let resolveKey, folderId;
+
+    if (message.resolveType === 'folder') {
+        folderId = message.folderId;
+        resolveKey = `folder-${folderId}`;
+    } else if (message.resolveType === 'virtual') {
+        resolveKey = `virtual-${message.virtualFolderId}`;
+        folderId = message.virtualFolderId;
+    }
+
+    const pending = pendingResolves.get(resolveKey);
+    if (pending) {
+        pendingResolves.delete(resolveKey);
+        const resolveBtn = pending.resolveBtn;
+        if (resolveBtn) {
+            resolveBtn.disabled = false;
+            resolveBtn.classList.remove('resolving');
+            resolveBtn.textContent = '🔍';
+        }
+    }
+
+    if (result && result.success) {
+        silentLoadBookmarks().then(() => {
+            const updatedFolderEl = document.querySelector(`.folder[data-id="${folderId}"]`);
+            if (updatedFolderEl) {
+                updatedFolderEl.classList.remove('collapsed');
+                showResolveResult(updatedFolderEl, result);
+            }
+        });
+    } else {
+        console.error('[LinkScout Sidebar] Resolve failed:', result);
+    }
+});
+
 const LINKSCOUT_FOLDER_NAME = 'LinkScout';
 
 // DOM Elements
@@ -696,23 +739,21 @@ async function resolveFolder(folderId, folderEl) {
         resolveBtn.classList.add('resolving');
         resolveBtn.textContent = '';
     }
+
+    // Register pending resolve so the listener can clean up the button later
+    const resolveKey = `folder-${folderId}`;
+    pendingResolves.set(resolveKey, { resolveBtn });
+
     try {
-        const result = await browser.runtime.sendMessage({
+        const ack = await browser.runtime.sendMessage({
             action: 'resolveFolder',
             folderId
         });
-
-        if (result && result.success) {
-            await silentLoadBookmarks();
-            const updatedFolderEl = document.querySelector(`.folder[data-id="${folderId}"]`);
-            if (updatedFolderEl) {
-                updatedFolderEl.classList.remove('collapsed');
-                showResolveResult(updatedFolderEl, result);
-            }
-        }
+        console.log(`[LinkScout Sidebar] Resolve folder ${folderId} started:`, ack);
+        // The actual result will arrive via the resolveComplete listener.
     } catch (error) {
-        console.error('Error resolving folder:', error);
-    } finally {
+        console.error('Error starting folder resolve:', error);
+        pendingResolves.delete(resolveKey);
         if (resolveBtn) {
             resolveBtn.disabled = false;
             resolveBtn.classList.remove('resolving');
@@ -733,23 +774,22 @@ async function resolveVirtualFolder(folder) {
         resolveBtn.classList.add('resolving');
         resolveBtn.textContent = '';
     }
-    try {
-        const result = await browser.runtime.sendMessage({
-            action: 'resolveMultipleUrls',
-            bookmarkIds: ids
-        });
 
-        if (result && result.success) {
-            await silentLoadBookmarks();
-            const updatedFolderEl = document.querySelector(`.folder[data-id="${folder.id}"]`);
-            if (updatedFolderEl) {
-                updatedFolderEl.classList.remove('collapsed');
-                showResolveResult(updatedFolderEl, result);
-            }
-        }
+    // Register pending resolve so the listener can clean up the button later
+    const resolveKey = `virtual-${folder.id}`;
+    pendingResolves.set(resolveKey, { resolveBtn });
+
+    try {
+        const ack = await browser.runtime.sendMessage({
+            action: 'resolveMultipleUrls',
+            bookmarkIds: ids,
+            virtualFolderId: folder.id
+        });
+        console.log(`[LinkScout Sidebar] Resolve virtual folder ${folder.id} started:`, ack);
+        // The actual result will arrive via the resolveComplete listener.
     } catch (e) {
-        console.error('Error resolving virtual folder:', e);
-    } finally {
+        console.error('Error starting virtual folder resolve:', e);
+        pendingResolves.delete(resolveKey);
         if (resolveBtn) {
             resolveBtn.disabled = false;
             resolveBtn.classList.remove('resolving');
