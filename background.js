@@ -1020,7 +1020,9 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
 
 // Resolve URL by following redirects via HEAD request (with timeout)
 // Falls back to normalizeUrl if the request fails
+// IMPORTANT: This function MUST NEVER throw — always returns a URL (original if resolution fails)
 async function resolveUrl(url, depth = 0) {
+  try {
   console.log(`[LinkScout 🔍 Resolve] resolveUrl: Iniciando (depth=${depth}) para ${url}`);
   
   if (depth > 10) {
@@ -1119,6 +1121,11 @@ async function resolveUrl(url, depth = 0) {
     console.error(`[LinkScout 🔍 Resolve] resolveUrl: ❌ Erro irreversível ao resolver ${url}:`, error.message);
     return normalizeUrl(url);
   }
+  } catch (outerError) {
+    // Global safety net — resolveUrl must NEVER throw
+    console.error(`[LinkScout 🔍 Resolve] resolveUrl: 🛑 Exceção global capturada para ${url}:`, outerError.message);
+    try { return normalizeUrl(url); } catch (_) { return url; }
+  }
 }
 
 async function findOrCreateFolder(parentId, title, index = undefined) {
@@ -1207,6 +1214,9 @@ async function createBookmarkStructure(links, pageTitle, settings) {
   let updatedCount = 0;
   let failCount = 0;
 
+  // Collect bookmark IDs created during this operation for background resolution
+  const createdBookmarkIds = [];
+
   try {
     // Get bookmark location from settings
     let parentId = settings.bookmarkLocation || 'toolbar_____';
@@ -1239,6 +1249,8 @@ async function createBookmarkStructure(links, pageTitle, settings) {
     const pageTitleFolder = await findOrCreateFolder(linkScoutFolder.id, pageTitle, 0);
 
     // Create bookmarks with subfolder logic
+    // IMPORTANT: Save immediately with skipResolve=true to avoid blocking.
+    // Resolution is triggered in background after all links are saved.
 
     const linksPerFolder = settings.linksPerFolder || 10;
 
@@ -1253,9 +1265,13 @@ async function createBookmarkStructure(links, pageTitle, settings) {
             link,
             link,
             0,
-            baseFolderPath
+            baseFolderPath,
+            true // skipResolve — save immediately, resolve later
           );
-          if (result.action === 'created') successCount++;
+          if (result.action === 'created') {
+            successCount++;
+            if (result.bookmark) createdBookmarkIds.push(result.bookmark.id);
+          }
           else if (result.action === 'skipped') skippedCount++;
           else if (result.action === 'updated') updatedCount++;
         } catch (error) {
@@ -1291,9 +1307,13 @@ async function createBookmarkStructure(links, pageTitle, settings) {
                 link,
                 link,
                 undefined,
-                subFolderPath
+                subFolderPath,
+                true // skipResolve — save immediately, resolve later
               );
-              if (result.action === 'created') successCount++;
+              if (result.action === 'created') {
+                successCount++;
+                if (result.bookmark) createdBookmarkIds.push(result.bookmark.id);
+              }
               else if (result.action === 'skipped') skippedCount++;
               else if (result.action === 'updated') updatedCount++;
             } catch (error) {
@@ -1311,9 +1331,13 @@ async function createBookmarkStructure(links, pageTitle, settings) {
               link,
               link,
               undefined,
-              directFolderPath
+              directFolderPath,
+              true // skipResolve — save immediately, resolve later
             );
-            if (result.action === 'created') successCount++;
+            if (result.action === 'created') {
+              successCount++;
+              if (result.bookmark) createdBookmarkIds.push(result.bookmark.id);
+            }
             else if (result.action === 'skipped') skippedCount++;
             else if (result.action === 'updated') updatedCount++;
           } catch (error) {
@@ -1324,6 +1348,17 @@ async function createBookmarkStructure(links, pageTitle, settings) {
     }
 
     // Removed notification code - Firefox notifications are unreliable
+
+    // Trigger background resolution for all newly created bookmarks
+    // This runs asynchronously — the user sees the links saved immediately
+    if (createdBookmarkIds.length > 0) {
+      console.log(`[LinkScout 🔍 Resolve] Background resolve: Disparando resolução para ${createdBookmarkIds.length} bookmarks recém-salvos`);
+      resolveMultipleUrls(createdBookmarkIds).then(result => {
+        console.log(`[LinkScout 🔍 Resolve] Background resolve: Concluído.`, result);
+      }).catch(error => {
+        console.error(`[LinkScout 🔍 Resolve] Background resolve: ❌ Falha:`, error.message);
+      });
+    }
 
     return { successCount, skippedCount, updatedCount, failCount };
 
@@ -1502,16 +1537,24 @@ function isNumberedSubfolder(title) {
 // Collect ALL bookmark nodes (recursively from all subfolders, not just numbered ones)
 async function collectAllBookmarkNodes(folderId) {
   const bookmarks = [];
-  const children = await browser.bookmarks.getChildren(folderId);
+  try {
+    const children = await browser.bookmarks.getChildren(folderId);
 
-  for (const child of children) {
-    if (child.url) {
-      bookmarks.push(child);
-    } else {
-      // Recurse into ALL subfolders (numbered or otherwise)
-      const subBookmarks = await collectAllBookmarkNodes(child.id);
-      bookmarks.push(...subBookmarks);
+    for (const child of children) {
+      if (child.url) {
+        bookmarks.push(child);
+      } else {
+        // Recurse into ALL subfolders (numbered or otherwise)
+        try {
+          const subBookmarks = await collectAllBookmarkNodes(child.id);
+          bookmarks.push(...subBookmarks);
+        } catch (subError) {
+          console.error(`[LinkScout] Erro ao coletar bookmarks da subpasta ${child.id}:`, subError.message);
+        }
+      }
     }
+  } catch (error) {
+    console.error(`[LinkScout] Erro ao coletar bookmarks da pasta ${folderId}:`, error.message);
   }
   return bookmarks;
 }
@@ -2088,13 +2131,24 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
     // Return immediately to avoid Firefox message port timeout on long-running operations.
     // The actual work is done asynchronously and the result is broadcast back.
     const folderId = message.folderId;
+    console.log(`[LinkScout 🔍 Resolve] Handler: Recebido resolveFolder para pasta ${folderId}`);
     resolveFolderUrls(folderId).then(result => {
+      console.log(`[LinkScout 🔍 Resolve] Handler: resolveFolderUrls concluído, enviando resolveComplete`, result);
       browser.runtime.sendMessage({
         action: 'resolveComplete',
         resolveType: 'folder',
         folderId: folderId,
         result: result
       }).catch(() => {}); // Sidebar may be closed
+    }).catch(error => {
+      // CRITICAL: Always notify sidebar even on failure, otherwise button stays stuck
+      console.error(`[LinkScout 🔍 Resolve] Handler: ❌ resolveFolderUrls falhou:`, error.message);
+      browser.runtime.sendMessage({
+        action: 'resolveComplete',
+        resolveType: 'folder',
+        folderId: folderId,
+        result: { success: false, error: error.message }
+      }).catch(() => {});
     });
     return { started: true };
   }
@@ -2103,13 +2157,24 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
     // Return immediately to avoid Firefox message port timeout on long-running operations.
     const bookmarkIds = message.bookmarkIds;
     const virtualFolderId = message.virtualFolderId || null;
+    console.log(`[LinkScout 🔍 Resolve] Handler: Recebido resolveMultipleUrls para ${bookmarkIds.length} IDs`);
     resolveMultipleUrls(bookmarkIds).then(result => {
+      console.log(`[LinkScout 🔍 Resolve] Handler: resolveMultipleUrls concluído, enviando resolveComplete`, result);
       browser.runtime.sendMessage({
         action: 'resolveComplete',
         resolveType: 'virtual',
         virtualFolderId: virtualFolderId,
         result: result
       }).catch(() => {}); // Sidebar may be closed
+    }).catch(error => {
+      // CRITICAL: Always notify sidebar even on failure, otherwise button stays stuck
+      console.error(`[LinkScout 🔍 Resolve] Handler: ❌ resolveMultipleUrls falhou:`, error.message);
+      browser.runtime.sendMessage({
+        action: 'resolveComplete',
+        resolveType: 'virtual',
+        virtualFolderId: virtualFolderId,
+        result: { success: false, error: error.message }
+      }).catch(() => {});
     });
     return { started: true };
   }
