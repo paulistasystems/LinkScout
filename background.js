@@ -2315,6 +2315,46 @@ async function createContextMenus() {
 // Create menus on startup
 createContextMenus();
 
+// Robust helper to capture the origin page URL.
+// Firefox macOS may not always populate info.pageUrl or tab.url in context menu handlers,
+// so we use multiple fallbacks to ensure we always get the origin.
+async function getOriginUrl(info, tab) {
+  // 1st try: context menu API's pageUrl (requires tabs permission)
+  let originUrl = info.pageUrl;
+
+  // 2nd try: tab object URL
+  if (!originUrl && tab && tab.url) {
+    originUrl = tab.url;
+  }
+
+  // 3rd try: re-fetch the tab by ID (Firefox macOS sometimes has stale tab objects)
+  if (!originUrl && tab && tab.id) {
+    try {
+      const freshTab = await browser.tabs.get(tab.id);
+      originUrl = freshTab.url;
+      console.log(`[LinkScout] Origem obtida via tabs.get(): ${originUrl}`);
+    } catch (e) {
+      console.warn(`[LinkScout] Falha ao obter URL via tabs.get():`, e.message);
+    }
+  }
+
+  // 4th try: query for the active tab in the current window (final fallback)
+  if (!originUrl) {
+    try {
+      const activeTabs = await browser.tabs.query({ active: true, currentWindow: true });
+      if (activeTabs.length > 0 && activeTabs[0].url) {
+        originUrl = activeTabs[0].url;
+        console.log(`[LinkScout] Origem obtida via tabs.query(): ${originUrl}`);
+      }
+    } catch (e) {
+      console.warn(`[LinkScout] Falha ao obter URL via tabs.query():`, e.message);
+    }
+  }
+
+  console.log(`[LinkScout] Origem debug: info.pageUrl=${info.pageUrl}, tab.url=${tab ? tab.url : 'N/A'}, originUrl=${originUrl}`);
+  return originUrl;
+}
+
 browser.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === "linkscout-save-links") {
     // Try to get links from content script first (extracts actual href attributes)
@@ -2339,18 +2379,7 @@ browser.contextMenus.onClicked.addListener(async (info, tab) => {
 
     if (links.length > 0) {
       // Prepend the origin page URL as the first entry for reference
-      // Use multiple fallbacks: info.pageUrl (context menu API), tab.url, or explicit tab query
-      let originUrl = info.pageUrl || tab.url;
-      if (!originUrl && tab.id) {
-        try {
-          const freshTab = await browser.tabs.get(tab.id);
-          originUrl = freshTab.url;
-          console.log(`[LinkScout] Origem obtida via tabs.get(): ${originUrl}`);
-        } catch (e) {
-          console.warn(`[LinkScout] Falha ao obter URL da aba:`, e.message);
-        }
-      }
-      console.log(`[LinkScout] Origem debug: info.pageUrl=${info.pageUrl}, tab.url=${tab.url}, originUrl=${originUrl}`);
+      const originUrl = await getOriginUrl(info, tab);
       if (originUrl && originUrl.startsWith('http')) {
         links.unshift(originUrl);
         console.log(`[LinkScout] Origem da seleção adicionada: ${originUrl}`);
@@ -2373,6 +2402,13 @@ browser.contextMenus.onClicked.addListener(async (info, tab) => {
     if (info.linkUrl) {
       const pageTitle = tab.title || "Untitled Page";
       const links = [info.linkUrl];
+
+      // Prepend the origin page URL as the first entry for reference
+      const originUrl = await getOriginUrl(info, tab);
+      if (originUrl && originUrl.startsWith('http')) {
+        links.unshift(originUrl);
+        console.log(`[LinkScout] Origem do link adicionada: ${originUrl}`);
+      }
 
       const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
 
