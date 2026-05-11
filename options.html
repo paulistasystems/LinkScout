@@ -249,6 +249,44 @@
             margin-top: 5px;
             font-style: italic;
         }
+
+        .excluded-domain-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 15px;
+            background: white;
+            border-radius: 8px;
+            border: 1px solid #eee;
+            transition: all 0.2s;
+        }
+
+        .excluded-domain-item:hover {
+            border-color: #ddd;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        .excluded-domain-item .domain-name {
+            font-weight: 500;
+            color: #333;
+        }
+
+        .excluded-domain-item .remove-domain-btn {
+            background: none;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 4px 10px;
+            cursor: pointer;
+            font-size: 0.85em;
+            color: #999;
+            transition: all 0.2s;
+        }
+
+        .excluded-domain-item .remove-domain-btn:hover {
+            background: #fee;
+            border-color: #e88;
+            color: #c44;
+        }
     </style>
 </head>
 
@@ -289,6 +327,34 @@
             </div>
 
 
+        </div>
+
+        <div class="section">
+            <h2>🚫 Excluded Domains</h2>
+            <p style="color: #666; font-size: 0.9em; margin-bottom: 15px;">
+                Domains in this list will be skipped during automatic URL resolution.
+            </p>
+            <div class="form-group" style="margin-bottom: 15px;">
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="excludeDomainInput" placeholder="e.g. example.com" style="flex: 1;">
+                    <button id="addExcludeDomainBtn" style="
+                        padding: 12px 20px;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        border: none;
+                        border-radius: 8px;
+                        font-size: 1em;
+                        font-weight: 600;
+                        cursor: pointer;
+                        transition: all 0.3s;
+                        white-space: nowrap;
+                    ">+ Add</button>
+                </div>
+            </div>
+            <div id="excludedDomainsList" style="display: flex; flex-direction: column; gap: 6px;"></div>
+            <p id="excludedDomainsEmpty" class="hint" style="display: none; text-align: center; padding: 10px;">
+                No domains excluded yet.
+            </p>
         </div>
 
         <div class="section">

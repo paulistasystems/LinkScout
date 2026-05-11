@@ -542,6 +542,28 @@ function createBookmarkElement(bookmark) {
     titleSpan.textContent = bookmark.title || bookmark.url;
     itemEl.appendChild(titleSpan);
 
+    // Exclude domain button
+    const excludeBtn = document.createElement('button');
+    excludeBtn.className = 'bookmark-exclude-btn';
+    excludeBtn.title = 'Exclude this domain from resolution';
+    excludeBtn.textContent = '🚫';
+    excludeBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        try {
+            const hostname = new URL(bookmark.url).hostname.replace(/^www\./, '');
+            const result = await browser.runtime.sendMessage({
+                action: 'addExcludedDomain',
+                domain: hostname
+            });
+            if (result && result.success) {
+                showExcludeToast(hostname);
+            }
+        } catch (err) {
+            console.error('Error excluding domain:', err);
+        }
+    });
+    itemEl.appendChild(excludeBtn);
+
     itemEl.addEventListener('click', () => openAndTrash(bookmark.id));
 
     return itemEl;
@@ -992,4 +1014,24 @@ function filterNodes(nodes, query) {
 
         return matchesRequest;
     });
+}
+
+// Show a brief toast when a domain is excluded from resolution
+function showExcludeToast(domain) {
+    // Remove any existing toast
+    const existing = document.querySelector('.exclude-toast');
+    if (existing) existing.remove();
+
+    const toast = document.createElement('div');
+    toast.className = 'exclude-toast';
+    toast.textContent = `🚫 ${domain} excluded from resolution`;
+    document.body.appendChild(toast);
+
+    // Trigger entrance animation
+    requestAnimationFrame(() => toast.classList.add('visible'));
+
+    setTimeout(() => {
+        toast.classList.remove('visible');
+        setTimeout(() => toast.remove(), 300);
+    }, 2000);
 }

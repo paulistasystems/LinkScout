@@ -84,6 +84,7 @@ function showStatus(message, type) {
 document.addEventListener('DOMContentLoaded', () => {
     loadSettings();
     loadShortcutDisplay();
+    loadExcludedDomains();
 });
 document.getElementById('saveButton').addEventListener('click', saveSettings);
 
@@ -119,5 +120,93 @@ async function loadShortcutDisplay() {
 document.getElementById('rootFolder').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
         saveSettings();
+    }
+});
+
+// --- Excluded Domains Management ---
+
+let excludedDomainsCache = [];
+
+async function loadExcludedDomains() {
+    try {
+        const result = await browser.runtime.sendMessage({ action: 'getExcludedDomains' });
+        if (result && result.success) {
+            excludedDomainsCache = result.domains || [];
+            renderExcludedDomains();
+        }
+    } catch (error) {
+        console.error('Error loading excluded domains:', error);
+    }
+}
+
+function renderExcludedDomains() {
+    const listEl = document.getElementById('excludedDomainsList');
+    const emptyEl = document.getElementById('excludedDomainsEmpty');
+    listEl.innerHTML = '';
+
+    if (excludedDomainsCache.length === 0) {
+        emptyEl.style.display = 'block';
+        return;
+    }
+
+    emptyEl.style.display = 'none';
+
+    for (const domain of excludedDomainsCache.sort()) {
+        const item = document.createElement('div');
+        item.className = 'excluded-domain-item';
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'domain-name';
+        nameSpan.textContent = domain;
+        item.appendChild(nameSpan);
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'remove-domain-btn';
+        removeBtn.textContent = '🗑️ Remove';
+        removeBtn.addEventListener('click', () => removeExcludedDomain(domain));
+        item.appendChild(removeBtn);
+
+        listEl.appendChild(item);
+    }
+}
+
+async function addExcludedDomain() {
+    const input = document.getElementById('excludeDomainInput');
+    const domain = input.value.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '');
+    if (!domain) return;
+
+    try {
+        const result = await browser.runtime.sendMessage({ action: 'addExcludedDomain', domain });
+        if (result && result.success) {
+            excludedDomainsCache = result.domains;
+            renderExcludedDomains();
+            input.value = '';
+            showStatus(`✓ "${domain}" added to exclusion list`, 'success');
+        }
+    } catch (error) {
+        console.error('Error adding excluded domain:', error);
+        showStatus('✗ Error adding domain', 'error');
+    }
+}
+
+async function removeExcludedDomain(domain) {
+    try {
+        const result = await browser.runtime.sendMessage({ action: 'removeExcludedDomain', domain });
+        if (result && result.success) {
+            excludedDomainsCache = result.domains;
+            renderExcludedDomains();
+            showStatus(`✓ "${domain}" removed from exclusion list`, 'success');
+        }
+    } catch (error) {
+        console.error('Error removing excluded domain:', error);
+        showStatus('✗ Error removing domain', 'error');
+    }
+}
+
+document.getElementById('addExcludeDomainBtn').addEventListener('click', addExcludedDomain);
+document.getElementById('excludeDomainInput').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        addExcludedDomain();
     }
 });

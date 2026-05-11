@@ -368,3 +368,52 @@ body {
 ::-webkit-scrollbar-thumb:hover {
     background: rgba(102, 126, 234, 0.6);
 }
+
+/* Exclude domain button on bookmark items */
+.bookmark-exclude-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 11px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    opacity: 0;
+    transition: opacity 0.2s, background 0.2s;
+    flex-shrink: 0;
+    color: #ccc;
+}
+
+.bookmark-item:hover .bookmark-exclude-btn {
+    opacity: 0.6;
+}
+
+.bookmark-exclude-btn:hover {
+    opacity: 1 !important;
+    background: rgba(255, 80, 80, 0.25);
+    color: #ff6b6b;
+}
+
+/* Exclude toast notification */
+.exclude-toast {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: rgba(40, 40, 60, 0.95);
+    color: #eee;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 12px;
+    white-space: nowrap;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(102, 126, 234, 0.3);
+    opacity: 0;
+    transition: opacity 0.3s, transform 0.3s;
+    z-index: 9999;
+    pointer-events: none;
+}
+
+.exclude-toast.visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}

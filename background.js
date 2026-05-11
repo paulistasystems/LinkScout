@@ -54,7 +54,8 @@ const DEFAULT_SETTINGS = {
   rootFolder: 'LinkScout',
   bookmarkLocation: 'toolbar_____', // toolbar_____, menu________, unfiled_____
   enableUrlResolver: false,
-  aggregatorDomains: [] // Empty by default! Phantom tab is only for user-specified manual targets
+  aggregatorDomains: [], // Empty by default! Phantom tab is only for user-specified manual targets
+  excludedDomains: [] // Domains that should never be resolved automatically
 };
 
 // Auto-migrate user settings to ensure new tracking domains are covered
@@ -106,6 +107,20 @@ async function ensureMigratedSettings() {
     settings.aggregatorDomains = domains;
   }
   return settings;
+}
+
+// Check if a URL belongs to an excluded domain (should not be resolved)
+function isDomainExcluded(url, excludedDomains) {
+  if (!excludedDomains || excludedDomains.length === 0) return false;
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    return excludedDomains.some(domain => {
+      const d = domain.toLowerCase();
+      return hostname === d || hostname.endsWith('.' + d);
+    });
+  } catch (_) {
+    return false;
+  }
 }
 
 // IndexedDB for bookmark management
@@ -896,9 +911,13 @@ function extractTargetFromRedirectUrl(url) {
     const domain = urlObj.hostname;
     
     // Google News: try to decode CBM base64 protobuf encoded articles
-    if (domain.includes('news.google.com') && (urlObj.pathname.includes('/articles/') || urlObj.pathname.includes('/read/'))) {
+    if (domain.includes('news.google.com') && (urlObj.pathname.includes('/articles/') || urlObj.pathname.includes('/read/') || urlObj.pathname.includes('/rss/articles/'))) {
+      // First try ?url= query parameter (some Google News URLs use this)
+      const urlParam = urlObj.searchParams.get('url');
+      if (urlParam) return decodeURIComponent(urlParam);
+
       try {
-        const b64 = urlObj.pathname.split(/\/articles\/|\/read\//)[1].split('?')[0];
+        const b64 = urlObj.pathname.split(/\/articles\/|\/read\/|\/rss\/articles\//)[1].split('?')[0];
         if (b64) {
           let safeB64 = b64.replace(/-/g, '+').replace(/_/g, '/');
           while (safeB64.length % 4) safeB64 += '='; // Essential padding for atob()
@@ -922,6 +941,12 @@ function extractTargetFromRedirectUrl(url) {
         // If decoding fails, naturally fallback to phantom tab or HEAD request
         console.error('[LinkScout] Google News base64 parse error:', e);
       }
+    }
+
+    // Google consent redirect (e.g. consent.google.com redirects to actual content)
+    if (domain.includes('consent.google.com') || domain.includes('consent.google')) {
+      const continueUrl = urlObj.searchParams.get('continue');
+      if (continueUrl) return decodeURIComponent(continueUrl);
     }
 
     // Facebook and Messenger: look for 'u' parameter, especially in l.php or /flx/warn
@@ -1014,11 +1039,23 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
     }
 
     try {
-      // Cria a aba em background silenciosa
-      const tab = await browser.tabs.create({ url: url, active: false });
+      // Store the currently active tab so we can restore focus after phantom tab loads
+      const [previousActiveTab] = await browser.tabs.query({ active: true, currentWindow: true });
+      
+      // Create tab active initially to allow JS redirects to execute
+      const tab = await browser.tabs.create({ url: url, active: true });
       tabId = tab.id;
       
-      // Injetar blindagem para forçar redirecionamento na mesma janela (evita abas órfãs com noopener)
+      // Restore focus to previous tab after a short delay to let page JS fire
+      setTimeout(async () => {
+        try {
+          if (previousActiveTab && previousActiveTab.id) {
+            await browser.tabs.update(previousActiveTab.id, { active: true });
+          }
+        } catch (_) {}
+      }, 500);
+      
+      // Inject shielding to force redirect in same window (prevents orphan tabs with noopener)
       browser.tabs.executeScript(tabId, {
         code: `
           const s = document.createElement('script');
@@ -1040,16 +1077,35 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
         if (resolved) return;
         console.warn(`[LinkScout 🔍 Resolve] Phantom Tab: ⏱️ Timeout alcançado (15s) para ${url}. Fechando todas as abas vinculadas.`);
         browser.tabs.get(tabId).then(t => {
-          // Fallback: se travou no redirecionador nativo do google, extrair param
-          if (t.url && t.url.includes('google.com/url')) {
-             try {
-               let u = new URL(t.url);
-               let q = u.searchParams.get('q') || u.searchParams.get('url');
-               if (q) {
-                 console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Extração manual segura via parametro q para ${t.url}`);
-                 return cleanup(q);
-               }
-             } catch(e) {}
+          if (t.url) {
+            // Fallback: try static extraction from the tab's current URL
+            const extracted = extractTargetFromRedirectUrl(t.url);
+            if (extracted && extracted !== t.url) {
+              console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Extração estática no timeout: ${t.url} -> ${extracted}`);
+              return cleanup(extracted);
+            }
+            // Fallback: se travou no redirecionador nativo do google, extrair param
+            if (t.url.includes('google.com/url')) {
+              try {
+                let u = new URL(t.url);
+                let q = u.searchParams.get('q') || u.searchParams.get('url');
+                if (q) {
+                  console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Extração manual segura via parametro q para ${t.url}`);
+                  return cleanup(q);
+                }
+              } catch(e) {}
+            }
+            // Fallback: Google consent redirect
+            if (t.url.includes('consent.google')) {
+              try {
+                let u = new URL(t.url);
+                let cont = u.searchParams.get('continue');
+                if (cont) {
+                  console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Extração de consent redirect para ${t.url}`);
+                  return cleanup(decodeURIComponent(cont));
+                }
+              } catch(e) {}
+            }
           }
           cleanup(t.url || url);
         }).catch(() => {
@@ -1068,6 +1124,15 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
 // IMPORTANT: This function MUST NEVER throw — always returns a URL (original if resolution fails)
 async function resolveUrl(url, depth = 0) {
   try {
+  // Skip resolution for excluded domains
+  if (depth === 0) {
+    const { excludedDomains } = await browser.storage.sync.get({ excludedDomains: [] });
+    if (isDomainExcluded(url, excludedDomains)) {
+      console.log(`[LinkScout 🔍 Resolve] resolveUrl: ⏭️ Domínio excluído, pulando resolução para ${url}`);
+      return url;
+    }
+  }
+
   console.log(`[LinkScout 🔍 Resolve] resolveUrl: Iniciando (depth=${depth}) para ${url}`);
   
   if (depth > 10) {
@@ -1092,12 +1157,34 @@ async function resolveUrl(url, depth = 0) {
   const googleNewsHubs = ['/stories/', '/topics/', '/publications/', '/showcase', '/my/library', '/foryou', '/home'];
   const isHub = (url.includes('news.google.com') && googleNewsHubs.some(hub => url.includes(hub))) || url.includes('accounts.google.com/SignOutOptions');
 
-  // Sempre considerar esses domínios como agregadores para fallback de Aba Fantasma, 
-  // caso a extração estática falhe (ex: /stories/ do Google News que usa JS para redirecionar)
-  const isAggregator = (aggregatorDomains.some(domain => url.includes(domain)) || 
-                       url.includes('news.google.com') ||
-                       url.includes('google.com/url')) &&
-                       !isHub;
+  // Only use phantom tab for URLs that look like actual redirectors (have redirect-like paths/params)
+  const matchesAggregatorDomain = aggregatorDomains.some(domain => url.includes(domain)) || 
+                                  url.includes('news.google.com') ||
+                                  url.includes('google.com/url');
+
+  // Verify it's actually a redirect URL, not just a page on the aggregator domain
+  const looksLikeRedirector = (() => {
+    try {
+      const u = new URL(url);
+      // Facebook/Messenger: only redirect URLs contain l.php, /flx/warn, or have 'u' param
+      if (u.hostname.includes('facebook.com') || u.hostname.includes('messenger.com')) {
+        return u.pathname.includes('/l.php') || u.pathname.includes('/flx/warn') || u.searchParams.has('u');
+      }
+      // Google News articles/read are actual redirectors
+      if (u.hostname.includes('news.google.com')) {
+        return u.pathname.includes('/articles/') || u.pathname.includes('/read/') || 
+               u.pathname.includes('/rss/articles/');
+      }
+      // Google URL redirector
+      if (u.hostname.includes('google.com') && u.pathname.includes('/url')) {
+        return u.searchParams.has('q') || u.searchParams.has('url');
+      }
+      // Other aggregators (Reddit, YouTube, etc.): already well-scoped
+      return true;
+    } catch (_) { return true; }
+  })();
+
+  const isAggregator = matchesAggregatorDomain && looksLikeRedirector && !isHub;
 
   // Usar Aba Fantasma para links agregadores que podem rodar via Javascript ou bloquear HEAD
   if (isAggregator) {
@@ -2306,6 +2393,33 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
     } catch (error) {
       return { success: false, error: error.message };
     }
+  }
+
+  // Excluded domains CRUD
+  if (message.action === 'getExcludedDomains') {
+    const { excludedDomains } = await browser.storage.sync.get({ excludedDomains: [] });
+    return { success: true, domains: excludedDomains };
+  }
+
+  if (message.action === 'addExcludedDomain') {
+    const domain = (message.domain || '').trim().toLowerCase();
+    if (!domain) return { success: false, error: 'Empty domain' };
+    const { excludedDomains } = await browser.storage.sync.get({ excludedDomains: [] });
+    if (!excludedDomains.includes(domain)) {
+      excludedDomains.push(domain);
+      await browser.storage.sync.set({ excludedDomains });
+      console.log(`[LinkScout] Domínio adicionado à lista de exclusão: ${domain}`);
+    }
+    return { success: true, domains: excludedDomains };
+  }
+
+  if (message.action === 'removeExcludedDomain') {
+    const domain = (message.domain || '').trim().toLowerCase();
+    let { excludedDomains } = await browser.storage.sync.get({ excludedDomains: [] });
+    excludedDomains = excludedDomains.filter(d => d !== domain);
+    await browser.storage.sync.set({ excludedDomains });
+    console.log(`[LinkScout] Domínio removido da lista de exclusão: ${domain}`);
+    return { success: true, domains: excludedDomains };
   }
 });
 
