@@ -1149,7 +1149,7 @@ async function resolveUrl(url, depth = 0) {
                    if (text.includes("location.replace")) {
                        const jsMatch = text.match(/location\.replace\(['"]((https?:\/\/[^'"]+))['"]\)/);
                        if (jsMatch && jsMatch[1]) {
-                           finalUrl = jsMatch[1].replace(/\\\/\/g, '/');
+                           finalUrl = jsMatch[1].replace(/\\\//g, '/');
                        }
                    }
                }
