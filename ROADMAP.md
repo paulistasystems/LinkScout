@@ -37,6 +37,8 @@ Este documento detalha o planejamento de evolução do LinkScout, incluindo nova
 
 ## ✅ Concluído Recentemente
 
+- [x] **Resolução de URLs do Facebook (sidebar)**: Corrigido bug onde o botão de resolver links da sidebar não funcionava para URLs do Facebook/Messenger. A causa era que URLs do Facebook que usam redirecionamento via JavaScript (não HTTP 3xx) caíam no caminho HEAD/GET, que não consegue seguir redirects JS. Agora todas as URLs do Facebook/Messenger são roteadas para a Phantom Tab (que está autenticada no navegador do usuário). Adicionada também rede de segurança contra resolução incorreta para páginas de login/autenticação.
+
 - [x] **Origem dos Links (botão Salvar Link)**: Corrigido bug onde a URL de origem nunca era salva ao usar "Salvar Este Link" ou "Salvar Links da Seleção". A causa era a verificação global de duplicatas no IndexedDB, que rejeitava a origem se já existisse em qualquer pasta. Agora a origem é tratada separadamente: salva diretamente na pasta de destino com verificação de duplicatas apenas no nível da pasta, garantindo que a referência de origem esteja sempre presente.
 
 - [x] **Lista de Exclusão de Domínios**: Implementada opção para excluir domínios da resolução automática de URLs. Domínios podem ser adicionados pelo botão 🚫 nos bookmarks da sidebar ou manualmente pela página de Preferências. A lista pode ser consultada e gerenciada (adicionar/remover) nas Preferências. Domínios excluídos são ignorados pelo `resolveUrl()` e pelas funções de resolução em lote.

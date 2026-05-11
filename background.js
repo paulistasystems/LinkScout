@@ -1160,15 +1160,17 @@ async function resolveUrl(url, depth = 0) {
   // Only use phantom tab for URLs that look like actual redirectors (have redirect-like paths/params)
   const matchesAggregatorDomain = aggregatorDomains.some(domain => url.includes(domain)) || 
                                   url.includes('news.google.com') ||
-                                  url.includes('google.com/url');
+                                  url.includes('google.com/url') ||
+                                  url.includes('facebook.com') ||
+                                  url.includes('messenger.com');
 
   // Verify it's actually a redirect URL, not just a page on the aggregator domain
   const looksLikeRedirector = (() => {
     try {
       const u = new URL(url);
-      // Facebook/Messenger: only redirect URLs contain l.php, /flx/warn, or have 'u' param
+      // Facebook/Messenger: always use phantom tab — user is authenticated and JS redirects are common
       if (u.hostname.includes('facebook.com') || u.hostname.includes('messenger.com')) {
-        return u.pathname.includes('/l.php') || u.pathname.includes('/flx/warn') || u.searchParams.has('u');
+        return true;
       }
       // Google News articles/read are actual redirectors
       if (u.hostname.includes('news.google.com')) {
@@ -1189,7 +1191,7 @@ async function resolveUrl(url, depth = 0) {
   // Usar Aba Fantasma para links agregadores que podem rodar via Javascript ou bloquear HEAD
   if (isAggregator) {
     console.log(`[LinkScout 🔍 Resolve] resolveUrl: 🔮 Detectado agregador -> Acionando Phantom Tab para ${url}`);
-    const effectiveDomains = [...aggregatorDomains, 'news.google.com', 'google.com/url'];
+    const effectiveDomains = [...aggregatorDomains, 'news.google.com', 'google.com/url', 'facebook.com', 'messenger.com'];
     return await resolveUrlWithPhantomTab(url, effectiveDomains);
   }
 
@@ -1254,6 +1256,17 @@ async function resolveUrl(url, depth = 0) {
             return null;
         }
     }
+
+    // Safety net: detect when resolution leads to a login/auth page and keep the original URL
+    try {
+      const resolvedObj = new URL(finalUrl);
+      const authPatterns = ['/login', '/signin', '/sign_in', '/auth/', '/consent', '/accounts/login'];
+      const isAuthPage = authPatterns.some(p => resolvedObj.pathname.toLowerCase().includes(p));
+      if (isAuthPage && finalUrl !== url) {
+        console.log(`[LinkScout 🔍 Resolve] resolveUrl: ⚠️ Resolução levou a página de autenticação (${finalUrl}), mantendo URL original`);
+        return normalizeUrl(url);
+      }
+    } catch (_) {}
 
     console.log(`[LinkScout 🔍 Resolve] resolveUrl: ✅ Sucesso. ${url} -> ${finalUrl}`);
     return normalizeUrl(finalUrl);
