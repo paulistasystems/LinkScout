@@ -1350,7 +1350,7 @@ async function createOrUpdateBookmark(parentId, title, url, index = undefined, f
   return { action: 'created', bookmark: newBookmark };
 }
 
-async function createBookmarkStructure(links, pageTitle, settings) {
+async function createBookmarkStructure(links, pageTitle, settings, originUrl = null) {
   let successCount = 0;
   let skippedCount = 0;
   let updatedCount = 0;
@@ -1389,6 +1389,52 @@ async function createBookmarkStructure(links, pageTitle, settings) {
 
     // Create folder with page title
     const pageTitleFolder = await findOrCreateFolder(linkScoutFolder.id, pageTitle, 0);
+
+    // Save origin page URL as first bookmark in the folder for reference.
+    // This bypasses the global IndexedDB duplicate check because the origin URL
+    // may already exist in a different folder — we still want it here as a reference.
+    // Only folder-level duplicate check is performed.
+    if (originUrl) {
+      const normalizedOrigin = normalizeUrl(originUrl);
+      const baseFolderPath = `${rootFolderName}/${pageTitle}`;
+      // Check if origin already exists in THIS folder (not globally)
+      const folderChildren = await browser.bookmarks.getChildren(pageTitleFolder.id);
+      // Also check subfolders (the origin might be inside a numbered subfolder)
+      let originExistsInFolder = folderChildren.some(c => c.url === normalizedOrigin);
+      if (!originExistsInFolder) {
+        // Check subfolders too
+        for (const child of folderChildren) {
+          if (!child.url) {
+            try {
+              const subChildren = await browser.bookmarks.getChildren(child.id);
+              if (subChildren.some(sc => sc.url === normalizedOrigin)) {
+                originExistsInFolder = true;
+                break;
+              }
+            } catch (_) {}
+          }
+        }
+      }
+      if (!originExistsInFolder) {
+        try {
+          const originBookmark = await browser.bookmarks.create({
+            parentId: pageTitleFolder.id,
+            title: normalizedOrigin,
+            url: normalizedOrigin,
+            index: 0
+          });
+          // Add to IndexedDB (won't fail on duplicate — addLinkToDatabase returns false)
+          await addLinkToDatabase(normalizedOrigin, normalizedOrigin, pageTitleFolder.id, baseFolderPath, originUrl, true);
+          await updateFolderTimestamp(pageTitleFolder.id);
+          successCount++;
+          console.log(`[LinkScout] Origem salva na pasta: ${normalizedOrigin}`);
+        } catch (error) {
+          console.warn(`[LinkScout] Erro ao salvar origem: ${error.message}`);
+        }
+      } else {
+        console.log(`[LinkScout] Origem já existe na pasta: ${normalizedOrigin}`);
+      }
+    }
 
     // Create bookmarks with subfolder logic
     // IMPORTANT: Save immediately with skipResolve=true to avoid blocking.
@@ -2520,18 +2566,18 @@ browser.contextMenus.onClicked.addListener(async (info, tab) => {
     }
 
     if (links.length > 0) {
-      // Prepend the origin page URL as the first entry for reference
+      // Capture origin page URL separately — it bypasses global dedup inside createBookmarkStructure
       const originUrl = await getOriginUrl(info, tab);
-      if (originUrl && originUrl.startsWith('http')) {
-        links.unshift(originUrl);
-        console.log(`[LinkScout] Origem da seleção adicionada: ${originUrl}`);
+      const validOrigin = (originUrl && originUrl.startsWith('http')) ? originUrl : null;
+      if (validOrigin) {
+        console.log(`[LinkScout] Origem da seleção capturada: ${validOrigin}`);
       }
 
       // Load settings
       const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
 
       try {
-        await createBookmarkStructure(links, pageTitle, settings);
+        await createBookmarkStructure(links, pageTitle, settings, validOrigin);
       } catch (error) {
         // Error handled in createBookmarkStructure
       }
@@ -2545,17 +2591,17 @@ browser.contextMenus.onClicked.addListener(async (info, tab) => {
       const pageTitle = tab.title || "Untitled Page";
       const links = [info.linkUrl];
 
-      // Prepend the origin page URL as the first entry for reference
+      // Capture origin page URL separately — it bypasses global dedup inside createBookmarkStructure
       const originUrl = await getOriginUrl(info, tab);
-      if (originUrl && originUrl.startsWith('http')) {
-        links.unshift(originUrl);
-        console.log(`[LinkScout] Origem do link adicionada: ${originUrl}`);
+      const validOrigin = (originUrl && originUrl.startsWith('http')) ? originUrl : null;
+      if (validOrigin) {
+        console.log(`[LinkScout] Origem do link capturada: ${validOrigin}`);
       }
 
       const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
 
       try {
-        await createBookmarkStructure(links, pageTitle, settings);
+        await createBookmarkStructure(links, pageTitle, settings, validOrigin);
       } catch (error) {
         // Error handled in createBookmarkStructure
       }

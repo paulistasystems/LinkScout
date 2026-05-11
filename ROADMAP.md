@@ -29,7 +29,6 @@ Este documento detalha o planejamento de evolução do LinkScout, incluindo nova
 
 ### 🐞 Correções Críticas
 
-
 ### ⚙️ Melhorias e Manutenção
 - [ ] Monitoramento de performance para coleções com > 10.000 links.
 - [ ] Refatoração modular do `background.js` para melhor legibilidade.
@@ -37,6 +36,8 @@ Este documento detalha o planejamento de evolução do LinkScout, incluindo nova
 ---
 
 ## ✅ Concluído Recentemente
+
+- [x] **Origem dos Links (botão Salvar Link)**: Corrigido bug onde a URL de origem nunca era salva ao usar "Salvar Este Link" ou "Salvar Links da Seleção". A causa era a verificação global de duplicatas no IndexedDB, que rejeitava a origem se já existisse em qualquer pasta. Agora a origem é tratada separadamente: salva diretamente na pasta de destino com verificação de duplicatas apenas no nível da pasta, garantindo que a referência de origem esteja sempre presente.
 
 - [x] **Lista de Exclusão de Domínios**: Implementada opção para excluir domínios da resolução automática de URLs. Domínios podem ser adicionados pelo botão 🚫 nos bookmarks da sidebar ou manualmente pela página de Preferências. A lista pode ser consultada e gerenciada (adicionar/remover) nas Preferências. Domínios excluídos são ignorados pelo `resolveUrl()` e pelas funções de resolução em lote.
 - [x] **Resolução de URLs (sidebar — casos específicos)**: Corrigidos 3 bugs na pipeline de resolução: (1) Phantom tab agora é ativada brevemente para permitir execução de JS redirects (Google News, etc.), (2) URLs do Facebook/Messenger sem parâmetro de redirect não são mais enviadas ao phantom tab (evita timeout de 15s em páginas de login), (3) Extração estática do Google News expandida para `/rss/articles/`, parâmetro `?url=` e redirect de consent.
