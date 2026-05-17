@@ -1,56 +1,58 @@
 # 🗺️ LinkScout Roadmap
 
-Este documento detalha o planejamento de evolução do LinkScout, incluindo novas funcionalidades, melhorias de UX e correções críticas.
+This document details the planning for LinkScout's evolution, including new features, UX improvements, and critical fixes.
 
 ---
 
-## 🛠️ Próximos Passos (Curto Prazo)
+## 🛠️ Next Steps (Short Term)
 
 
-### 🔍 Melhorias na Busca e Filtros
-- [ ] Filtro para mostrar apenas links "não resolvidos" ou "com erro".
-
----
-
-## 🚀 Planejado (Médio Prazo)
-
-
-### 🖱️ Drag & Drop na Sidebar
-- [ ] Reorganização manual de links entre pastas via arrastar e soltar.
-- [ ] Mover pastas inteiras para novos níveis hierárquicos.
+### 🔍 Search and Filter Improvements
+- [ ] Filter to show only "unresolved" or "error" links.
 
 ---
 
-## 🔮 Visão de Futuro (Longo Prazo)
+## 🚀 Planned (Medium Term)
+
+
+### 🖱️ Drag & Drop in Sidebar
+- [ ] Manual reorganization of links between folders via drag and drop.
+- [ ] Move entire folders to new hierarchical levels.
 
 ---
 
-## 🐛 Correções e Manutenção Contínua
-
-### 🐞 Correções Críticas
-
-### ⚙️ Melhorias e Manutenção
-- [ ] Monitoramento de performance para coleções com > 10.000 links.
-- [ ] Refatoração modular do `background.js` para melhor legibilidade.
+## 🔮 Future Vision (Long Term)
 
 ---
 
-## ✅ Concluído Recentemente
+## 🐛 Fixes and Continuous Maintenance
 
-- [x] **Resolução de URLs do Facebook (sidebar)**: Corrigido bug onde o botão de resolver links da sidebar não funcionava para URLs do Facebook/Messenger. A causa era que URLs do Facebook que usam redirecionamento via JavaScript (não HTTP 3xx) caíam no caminho HEAD/GET, que não consegue seguir redirects JS. Agora todas as URLs do Facebook/Messenger são roteadas para a Phantom Tab (que está autenticada no navegador do usuário). Adicionada também rede de segurança contra resolução incorreta para páginas de login/autenticação.
+### 🐞 Critical Fixes
 
-- [x] **Origem dos Links (botão Salvar Link)**: Corrigido bug onde a URL de origem nunca era salva ao usar "Salvar Este Link" ou "Salvar Links da Seleção". A causa era a verificação global de duplicatas no IndexedDB, que rejeitava a origem se já existisse em qualquer pasta. Agora a origem é tratada separadamente: salva diretamente na pasta de destino com verificação de duplicatas apenas no nível da pasta, garantindo que a referência de origem esteja sempre presente.
+Link resolution button not working in sidebar for Google News links, which are legacy links that were saved previously.
 
-- [x] **Lista de Exclusão de Domínios**: Implementada opção para excluir domínios da resolução automática de URLs. Domínios podem ser adicionados pelo botão 🚫 nos bookmarks da sidebar ou manualmente pela página de Preferências. A lista pode ser consultada e gerenciada (adicionar/remover) nas Preferências. Domínios excluídos são ignorados pelo `resolveUrl()` e pelas funções de resolução em lote.
-- [x] **Resolução de URLs (sidebar — casos específicos)**: Corrigidos 3 bugs na pipeline de resolução: (1) Phantom tab agora é ativada brevemente para permitir execução de JS redirects (Google News, etc.), (2) URLs do Facebook/Messenger sem parâmetro de redirect não são mais enviadas ao phantom tab (evita timeout de 15s em páginas de login), (3) Extração estática do Google News expandida para `/rss/articles/`, parâmetro `?url=` e redirect de consent.
-- [x] **Resolução de URLs (sidebar)**: Corrigidos 3 problemas que impediam a resolução completa de todos os links: (1) guard de concorrência com contador em vez de booleano para suportar resoluções simultâneas, (2) falhas silenciosas agora reportadas como erros em vez de "sem alteração", (3) busca automática de título da página após resolução via `fetchPageTitle()`.
-- [x] **Origem dos Links (Firefox macOS)**: Corrigida captura da URL de origem para "Salvar Este Link" (nunca era capturada) e "Salvar Links da Seleção". Extraída lógica para helper `getOriginUrl()` com 4 fallbacks robustos (`info.pageUrl` → `tab.url` → `tabs.get()` → `tabs.query()`).
-- [x] **Resolução de URLs em lote**: Corrigido bug onde apenas o primeiro link da pasta era processado. Adicionado flag de supressão de sync, rate-limiting entre resoluções, preservação de títulos e sincronização do IndexedDB após cada resolução.
-- [x] **Resolução automática na seleção (macOS Firefox)**: Links de seleção agora são salvos imediatamente (`skipResolve`) e a resolução de URLs é disparada em background.
-- [x] **Botão "Resolver URLs" na sidebar**: Correção de travamentos e feedback visual em tempo real.
-- [x] **Origem dos Links na Seleção**: Prepend da URL de origem ao salvar múltiplas seleções.
-- [x] **Sistema de Logs**: Implementação de logs estruturados para debug remoto.
-- [x] **Gestão de Lixeira**: Auto-limpeza após 30 dias e movimentação automática ao abrir.
-- [x] **Atalho de Teclado**: `Cmd+Shift+U` para abrir/fechar sidebar rapidamente.
-- [x] **Resolução de URLs no Firefox (macOS) - Message Port Timeout**: Corrigido problema onde `browser.runtime.sendMessage` expirava durante operações longas de resolução.
-- [x] **Sincronização bidirecional**: favoritos sincronizados entre IndexedDB e Browser Bookmarks.
+### ⚙️ Improvements and Maintenance
+- [ ] Performance monitoring for collections with > 10,000 links.
+- [ ] Modular refactoring of `background.js` for better readability.
+
+---
+
+## ✅ Recently Completed
+
+- [x] **Facebook URL Resolution (sidebar)**: Fixed bug where the sidebar link resolution button did not work for Facebook/Messenger URLs. The issue was that Facebook URLs using JavaScript redirection (not HTTP 3xx) fell into the HEAD/GET path, which cannot follow JS redirects. Now all Facebook/Messenger URLs are routed to the Phantom Tab (which is authenticated in the user's browser). Also added a safety net against incorrect resolution for login/authentication pages.
+
+- [x] **Link Origin (Save Link button)**: Fixed bug where the origin URL was never saved when using "Save This Link" or "Save Selection Links". The cause was a global duplicate check in IndexedDB that rejected the origin if it already existed in any folder. Now the origin is handled separately: saved directly in the destination folder with duplicate checking only at the folder level, ensuring the origin reference is always present.
+
+- [x] **Domain Exclusion List**: Implemented option to exclude domains from automatic URL resolution. Domains can be added via the 🚫 button in the sidebar bookmarks or manually through the Preferences page. The list can be consulted and managed (add/remove) in Preferences. Excluded domains are ignored by `resolveUrl()` and batch resolution functions.
+- [x] **URL Resolution (sidebar — specific cases)**: Fixed 3 bugs in the resolution pipeline: (1) Phantom tab is now briefly activated to allow JS redirect execution (Google News, etc.), (2) Facebook/Messenger URLs without redirect parameter are no longer sent to phantom tab (avoids 15s timeout on login pages), (3) Static Google News extraction expanded to `/rss/articles/`, `?url=` parameter, and consent redirect.
+- [x] **URL Resolution (sidebar)**: Fixed 3 issues that prevented complete resolution of all links: (1) concurrency guard with counter instead of boolean to support simultaneous resolutions, (2) silent failures now reported as errors instead of "no change", (3) automatic page title search after resolution via `fetchPageTitle()`.
+- [x] **Link Origin (Firefox macOS)**: Fixed origin URL capture for "Save This Link" (was never captured) and "Save Selection Links". Extracted logic to `getOriginUrl()` helper with 4 robust fallbacks (`info.pageUrl` → `tab.url` → `tabs.get()` → `tabs.query()`).
+- [x] **Batch URL Resolution**: Fixed bug where only the first link in the folder was processed. Added sync suppression flag, rate-limiting between resolutions, title preservation, and IndexedDB synchronization after each resolution.
+- [x] **Automatic resolution on selection (macOS Firefox)**: Selection links are now saved immediately (`skipResolve`) and URL resolution is triggered in background.
+- [x] **"Resolve URLs" button in sidebar**: Fixed freezing issues and real-time visual feedback.
+- [x] **Link Origin in Selection**: Prepend of origin URL when saving multiple selections.
+- [x] **Logging System**: Implementation of structured logs for remote debugging.
+- [x] **Trash Management**: Auto-cleanup after 30 days and automatic movement on open.
+- [x] **Keyboard Shortcut**: `Cmd+Shift+U` to quickly open/close sidebar.
+- [x] **URL Resolution in Firefox (macOS) - Message Port Timeout**: Fixed issue where `browser.runtime.sendMessage` was timing out during long resolution operations.
+- [x] **Bidirectional Synchronization**: favorites synchronized between IndexedDB and Browser Bookmarks.
