@@ -1617,13 +1617,15 @@ async function saveAllTabsAndClose() {
     const rootFolderName = settings.rootFolder || 'LinkScout';
     const linkScoutFolder = await findOrCreateFolder(parentId, rootFolderName);
 
-    // Create a folder named after weekday - dd/mm/yyyy
-    const now = new Date();
-    const weekday = now.toLocaleDateString('en-US', { weekday: 'long' });
-    const day = String(now.getDate()).padStart(2, '0');
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const year = now.getFullYear();
-    const sessionName = `${weekday} - ${day}/${month}/${year}`;
+		// Create a folder named after weekday - dd/mm/yyyy HH:MM
+		const now = new Date();
+		const weekday = now.toLocaleDateString('en-US', { weekday: 'long' });
+		const day = String(now.getDate()).padStart(2, '0');
+		const month = String(now.getMonth() + 1).padStart(2, '0');
+		const year = now.getFullYear();
+		const hours = String(now.getHours()).padStart(2, '0');
+		const minutes = String(now.getMinutes()).padStart(2, '0');
+		const sessionName = `${weekday} - ${day}/${month}/${year} ${hours}:${minutes}`;
     
     // Check if session folder already exists
     const existingChildren = await browser.bookmarks.getChildren(linkScoutFolder.id);
