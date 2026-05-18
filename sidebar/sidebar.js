@@ -1,5 +1,4 @@
 // LinkScout Sidebar Script
-
 // Pending resolve operations — maps a resolve key to { resolveBtn, folderId }
 const pendingResolves = new Map();
 
@@ -7,10 +6,8 @@ const pendingResolves = new Map();
 // This avoids Firefox's message port timeout on long-running resolve operations.
 browser.runtime.onMessage.addListener((message) => {
     if (message.action !== 'resolveComplete') return;
-
     const result = message.result;
     let resolveKey, folderId;
-
     if (message.resolveType === 'folder') {
         folderId = message.folderId;
         resolveKey = `folder-${folderId}`;
@@ -18,7 +15,6 @@ browser.runtime.onMessage.addListener((message) => {
         resolveKey = `virtual-${message.virtualFolderId}`;
         folderId = message.virtualFolderId;
     }
-
     const pending = pendingResolves.get(resolveKey);
     if (pending) {
         pendingResolves.delete(resolveKey);
@@ -29,7 +25,6 @@ browser.runtime.onMessage.addListener((message) => {
             resolveBtn.textContent = '🔍';
         }
     }
-
     if (result && result.success) {
         silentLoadBookmarks().then(() => {
             const updatedFolderEl = document.querySelector(`.folder[data-id="${folderId}"]`);
@@ -58,6 +53,8 @@ let expandAllBtn;
 let sortBtn;
 let searchInput;
 let groupByDomainBtn;
+let filterStatusBtn;
+let filterStatusDropdown;
 
 // State
 let linkscoutFolderId = null;
@@ -67,6 +64,37 @@ let searchQuery = '';
 let allBookmarksData = []; // Store raw data for filtering/sorting
 let groupByDomain = false;
 let linksPerFolder = 10;
+let statusFilter = 'all'; // 'all', 'unresolved', 'error'
+
+// Known redirect/shortener domains that indicate an unresolved link
+const REDIRECT_DOMAINS = [
+    't.co', 'bit.ly', 'tinyurl.com', 'lnkd.in', 'ow.ly', 'is.gd',
+    'buff.ly', 'j.mp', 'dlvr.it', 'shorturl.at', 'rb.gy', 'cutt.ly',
+    'v.gd', 'rebrand.ly', 'smarturl.it', 'cli.re', 'soo.gd', 'lc.chat', 'sq.link'
+];
+
+// Check if a bookmark is unresolved (still a redirect URL)
+function isUnresolved(bookmark) {
+    if (bookmark.redirectResolved) return false;
+    try {
+        const hostname = new URL(bookmark.url).hostname.replace(/^www\./, '');
+        return REDIRECT_DOMAINS.some(d => hostname === d || hostname.endsWith('.' + d));
+    } catch { return false; }
+}
+
+// Check if a bookmark has an error (not resolved and not a known redirector)
+function hasError(bookmark) {
+    if (bookmark.redirectResolved) return false;
+    if (isUnresolved(bookmark)) return false;
+    return bookmark.url === (bookmark.originalUrl || bookmark.url) && !bookmark.redirectResolved;
+}
+
+// Get the status of a bookmark
+function getBookmarkStatus(bookmark) {
+    if (isUnresolved(bookmark)) return 'unresolved';
+    if (hasError(bookmark)) return 'error';
+    return 'resolved';
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     bookmarkTreeEl = document.getElementById('bookmarkTree');
@@ -78,6 +106,8 @@ document.addEventListener('DOMContentLoaded', () => {
     sortBtn = document.getElementById('sortBtn');
     searchInput = document.getElementById('searchInput');
     groupByDomainBtn = document.getElementById('groupByDomainBtn');
+    filterStatusBtn = document.getElementById('filterStatusBtn');
+    filterStatusDropdown = document.getElementById('filterStatusDropdown');
 
     // Event listeners
     refreshBtn.addEventListener('click', loadBookmarks);
@@ -86,6 +116,26 @@ document.addEventListener('DOMContentLoaded', () => {
     sortBtn.addEventListener('click', toggleSortOrder);
     searchInput.addEventListener('input', handleSearch);
     groupByDomainBtn.addEventListener('click', toggleGroupByDomain);
+
+    // Status filter button and dropdown
+    filterStatusBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isVisible = filterStatusDropdown.style.display !== 'none';
+        filterStatusDropdown.style.display = isVisible ? 'none' : 'block';
+    });
+    filterStatusDropdown.querySelectorAll('.filter-option').forEach(option => {
+        option.addEventListener('click', (e) => {
+            e.stopPropagation();
+            statusFilter = option.dataset.filter;
+            updateFilterButton();
+            filterStatusDropdown.style.display = 'none';
+            renderBookmarkTree();
+        });
+    });
+    // Close dropdown when clicking outside
+    document.addEventListener('click', () => {
+        filterStatusDropdown.style.display = 'none';
+    });
 
     // Initial sort icon
     updateSortIcon();
@@ -96,107 +146,69 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function loadBookmarks() {
     showLoading(true);
-
     try {
-        // Get bookmark tree from background script
         const result = await browser.runtime.sendMessage({ action: 'getBookmarkTree' });
-
         if (result.error) {
             console.error('Error loading bookmarks:', result.error);
             showEmpty(true);
             return;
         }
-
         linkscoutFolderId = result.linkscoutFolderId;
         allBookmarksData = result.bookmarks;
         linksPerFolder = result.linksPerFolder || 10;
-
         renderBookmarkTree();
     } catch (error) {
         console.error('Error loading bookmarks:', error);
         showEmpty(true);
     }
-
     showLoading(false);
 }
 
 let pendingReload = null;
-
 function requestSilentReload() {
     if (pendingReload) clearTimeout(pendingReload);
-    pendingReload = setTimeout(() => {
-        silentLoadBookmarks();
-    }, 500);
+    pendingReload = setTimeout(() => { silentLoadBookmarks(); }, 500);
 }
 
 if (browser.bookmarks) {
-    if (browser.bookmarks.onCreated) browser.bookmarks.onCreated.addListener((id, bookmark) => {
-        handleBookmarkCreated(id, bookmark);
-    });
-    if (browser.bookmarks.onRemoved) browser.bookmarks.onRemoved.addListener((id, removeInfo) => {
-        handleBookmarkRemoved(id, removeInfo);
-    });
+    if (browser.bookmarks.onCreated) browser.bookmarks.onCreated.addListener((id, bookmark) => { handleBookmarkCreated(id, bookmark); });
+    if (browser.bookmarks.onRemoved) browser.bookmarks.onRemoved.addListener((id, removeInfo) => { handleBookmarkRemoved(id, removeInfo); });
     if (browser.bookmarks.onChanged) browser.bookmarks.onChanged.addListener(requestSilentReload);
     if (browser.bookmarks.onMoved) browser.bookmarks.onMoved.addListener(requestSilentReload);
 }
 
 function handleBookmarkCreated(id, bookmark) {
-    if (!bookmark.url) {
-        requestSilentReload();
-        return;
-    }
+    if (!bookmark.url) { requestSilentReload(); return; }
 
     function findAndAdd(nodes) {
         for (let node of nodes) {
             if (node.id === bookmark.parentId) {
                 if (!node.children) node.children = [];
-                node.children.push({
-                    type: 'bookmark',
-                    id: bookmark.id,
-                    url: bookmark.url,
-                    title: bookmark.title || bookmark.url,
-                    dateAdded: bookmark.dateAdded || Date.now()
-                });
+                node.children.push({ type: 'bookmark', id: bookmark.id, url: bookmark.url, title: bookmark.title || bookmark.url, dateAdded: bookmark.dateAdded || Date.now() });
                 return true;
             }
-            if (node.type === 'folder' && node.children) {
-                if (findAndAdd(node.children)) return true;
-            }
+            if (node.type === 'folder' && node.children) { if (findAndAdd(node.children)) return true; }
         }
         return false;
     }
 
     if (bookmark.parentId === linkscoutFolderId) {
         if (!allBookmarksData) allBookmarksData = [];
-        allBookmarksData.push({
-            type: 'bookmark',
-            id: bookmark.id,
-            url: bookmark.url,
-            title: bookmark.title || bookmark.url,
-            dateAdded: bookmark.dateAdded || Date.now()
-        });
+        allBookmarksData.push({ type: 'bookmark', id: bookmark.id, url: bookmark.url, title: bookmark.title || bookmark.url, dateAdded: bookmark.dateAdded || Date.now() });
     } else {
         if (allBookmarksData) findAndAdd(allBookmarksData);
     }
 
-    if (groupByDomain || searchQuery) {
-        requestSilentReload();
-        return;
-    }
+    if (groupByDomain || searchQuery || statusFilter !== 'all') { requestSilentReload(); return; }
 
     let targetContainer = null;
     let targetFolderEl = null;
-
     if (bookmark.parentId === linkscoutFolderId) {
         targetContainer = bookmarkTreeEl;
     } else {
         targetFolderEl = document.querySelector(`.folder[data-id="${bookmark.parentId}"]`);
-        if (!targetFolderEl) {
-            requestSilentReload();
-            return;
-        }
+        if (!targetFolderEl) { requestSilentReload(); return; }
         targetFolderEl.style.display = 'block';
-        
         targetContainer = targetFolderEl.querySelector('.folder-content');
         if (!targetContainer) {
             targetContainer = document.createElement('div');
@@ -205,22 +217,12 @@ function handleBookmarkCreated(id, bookmark) {
         }
     }
 
-    const bookmarkEl = createBookmarkElement({
-        id: bookmark.id,
-        url: bookmark.url,
-        title: bookmark.title || bookmark.url
-    });
-
+    const bookmarkEl = createBookmarkElement({ id: bookmark.id, url: bookmark.url, title: bookmark.title || bookmark.url });
     const existingBookmarks = Array.from(targetContainer.querySelectorAll('.bookmark-item'));
     if (currentSortOrder === 'desc') {
-        if (existingBookmarks.length > 0) {
-            targetContainer.insertBefore(bookmarkEl, existingBookmarks[0]);
-        } else {
-            targetContainer.appendChild(bookmarkEl);
-        }
-    } else {
-        targetContainer.appendChild(bookmarkEl);
-    }
+        if (existingBookmarks.length > 0) { targetContainer.insertBefore(bookmarkEl, existingBookmarks[0]); }
+        else { targetContainer.appendChild(bookmarkEl); }
+    } else { targetContainer.appendChild(bookmarkEl); }
 
     if (targetFolderEl) {
         let current = targetFolderEl;
@@ -229,44 +231,27 @@ function handleBookmarkCreated(id, bookmark) {
             const header = Array.from(current.children).find(c => c.classList.contains('folder-header'));
             if (header) {
                 const countSpan = header.querySelector('.folder-count');
-                if (countSpan) {
-                    const count = parseInt(countSpan.textContent, 10);
-                    if (!isNaN(count)) countSpan.textContent = count + 1;
-                }
+                if (countSpan) { const count = parseInt(countSpan.textContent, 10); if (!isNaN(count)) countSpan.textContent = count + 1; }
             }
-            if (current.parentElement) {
-                current = current.parentElement.closest('.folder');
-            } else {
-                break;
-            }
+            if (current.parentElement) { current = current.parentElement.closest('.folder'); } else { break; }
         }
     }
-
     showEmpty(false);
 }
 
 function handleBookmarkRemoved(id, removeInfo) {
     const folderEl = document.querySelector(`.folder[data-id="${id}"]`);
-    if (folderEl) {
-        removeElementAndUpdateCounts(`.folder[data-id="${id}"]`, true);
-    } else {
+    if (folderEl) { removeElementAndUpdateCounts(`.folder[data-id="${id}"]`, true); }
+    else {
         const bookmarkEl = document.querySelector(`.bookmark-item[data-id="${id}"]`);
-        if (bookmarkEl) {
-            removeElementAndUpdateCounts(`.bookmark-item[data-id="${id}"]`, false);
-        }
+        if (bookmarkEl) { removeElementAndUpdateCounts(`.bookmark-item[data-id="${id}"]`, false); }
     }
-
     function findAndRemove(nodes) {
         if (!nodes) return false;
         for (let i = 0; i < nodes.length; i++) {
             let node = nodes[i];
-            if (node.id === id) {
-                nodes.splice(i, 1);
-                return true;
-            }
-            if (node.type === 'folder' && node.children) {
-                if (findAndRemove(node.children)) return true;
-            }
+            if (node.id === id) { nodes.splice(i, 1); return true; }
+            if (node.type === 'folder' && node.children) { if (findAndRemove(node.children)) return true; }
         }
         return false;
     }
@@ -277,82 +262,48 @@ async function silentLoadBookmarks() {
     try {
         const scrollPos = bookmarkTreeEl.scrollTop;
         const expandedFolders = Array.from(bookmarkTreeEl.querySelectorAll('.folder:not(.collapsed)')).map(f => f.dataset.id);
-
         const result = await browser.runtime.sendMessage({ action: 'getBookmarkTree' });
-
-        if (result.error) {
-            console.error('Error in silent reload:', result.error);
-            return;
-        }
-
+        if (result.error) { console.error('Error in silent reload:', result.error); return; }
         linkscoutFolderId = result.linkscoutFolderId;
         allBookmarksData = result.bookmarks;
         linksPerFolder = result.linksPerFolder || 10;
-
         renderBookmarkTree();
-
         Array.from(bookmarkTreeEl.querySelectorAll('.folder')).forEach(f => {
-            if (expandedFolders.includes(f.dataset.id)) {
-                f.classList.remove('collapsed');
-            }
+            if (expandedFolders.includes(f.dataset.id)) { f.classList.remove('collapsed'); }
         });
-
         bookmarkTreeEl.scrollTop = scrollPos;
-    } catch (error) {
-        console.error('Error reloading silently:', error);
-    }
+    } catch (error) { console.error('Error reloading silently:', error); }
 }
 
 function showLoading(show) {
     loadingStateEl.style.display = show ? 'flex' : 'none';
-    if (show) {
-        bookmarkTreeEl.innerHTML = '';
-        emptyStateEl.style.display = 'none';
-    }
+    if (show) { bookmarkTreeEl.innerHTML = ''; emptyStateEl.style.display = 'none'; }
 }
 
-function showEmpty(show) {
-    emptyStateEl.style.display = show ? 'flex' : 'none';
-}
+function showEmpty(show) { emptyStateEl.style.display = show ? 'flex' : 'none'; }
 
 function renderBookmarkTree() {
     bookmarkTreeEl.innerHTML = '';
-
     let processedItems;
-
     if (groupByDomain) {
-        // Group by domain mode: flatten all bookmarks, then group by hostname
         let allItems = JSON.parse(JSON.stringify(allBookmarksData));
-        // Apply search filter first
         allItems = filterNodes(allItems, searchQuery);
+        if (statusFilter !== 'all') { allItems = filterByStatus(allItems, statusFilter); }
         processedItems = groupBookmarksByDomain(allItems);
-        // Sort domain folders alphabetically (or by count)
         processedItems = sortNodes(processedItems);
         processedItems = filterEmptyFolders(processedItems);
     } else {
-        // Normal mode
-        // 1. Filter
         processedItems = filterNodes(JSON.parse(JSON.stringify(allBookmarksData)), searchQuery);
-        // 2. Sort
+        if (statusFilter !== 'all') { processedItems = filterByStatus(processedItems, statusFilter); }
         processedItems = sortNodes(processedItems);
-        // 3. Filter empty folders (post-filter cleanup)
         processedItems = filterEmptyFolders(processedItems);
     }
-
-    if (!processedItems || processedItems.length === 0) {
-        showEmpty(true);
-        return;
-    }
-
+    if (!processedItems || processedItems.length === 0) { showEmpty(true); return; }
     showEmpty(false);
-
     processedItems.forEach(item => {
         if (item.type === 'folder') {
             const folderEl = createFolderElement(item);
-            // If searching or grouping by domain, expand folders
-            if (searchQuery || groupByDomain) {
-                folderEl.classList.remove('collapsed');
-            }
+            if (searchQuery || groupByDomain || statusFilter !== 'all') { folderEl.classList.remove('collapsed'); }
             bookmarkTreeEl.appendChild(folderEl);
         } else if (item.type === 'bookmark') {
             bookmarkTreeEl.appendChild(createBookmarkElement(item));
@@ -360,16 +311,12 @@ function renderBookmarkTree() {
     });
 }
 
-// Filter out folders that have no bookmarks (recursively)
 function filterEmptyFolders(items) {
     if (!items) return [];
-
     return items.filter(item => {
         if (item.type === 'bookmark') return true;
         if (item.type === 'folder') {
-            // Recursively filter children
             item.children = filterEmptyFolders(item.children);
-            // Keep folder only if it has bookmarks
             return countBookmarks(item) > 0;
         }
         return false;
@@ -381,128 +328,40 @@ function createFolderElement(folder) {
     const isVirtualFolder = String(folder.id).startsWith('domain-');
     folderEl.className = isVirtualFolder ? 'folder virtual' : 'folder';
     folderEl.dataset.id = folder.id;
-
     const bookmarkCount = countBookmarks(folder);
-
     const headerEl = document.createElement('div');
     headerEl.className = 'folder-header';
-
-    const toggleSpan = document.createElement('span');
-    toggleSpan.className = 'folder-toggle';
-    toggleSpan.textContent = '▼';
-    headerEl.appendChild(toggleSpan);
-
-    const iconSpan = document.createElement('span');
-    iconSpan.className = 'folder-icon';
-    iconSpan.textContent = '📁';
-    headerEl.appendChild(iconSpan);
-
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'folder-name';
-    nameSpan.textContent = folder.title;
-    headerEl.appendChild(nameSpan);
-
-    const countSpan = document.createElement('span');
-    countSpan.className = 'folder-count';
-    countSpan.textContent = bookmarkCount;
-    headerEl.appendChild(countSpan);
-
-
-
-    const actionsDiv = document.createElement('div');
-    actionsDiv.className = 'folder-actions';
-
-    const shuffleBtn = document.createElement('button');
-    shuffleBtn.className = 'folder-action-btn shuffle-btn';
-    shuffleBtn.title = 'Shuffle bookmarks';
-    shuffleBtn.textContent = '🔀';
-    actionsDiv.appendChild(shuffleBtn);
-
-    const resolveBtn = document.createElement('button');
-    resolveBtn.className = 'folder-action-btn resolve-btn';
-    resolveBtn.title = 'Resolve URLs';
-    resolveBtn.textContent = '🔍';
-    actionsDiv.appendChild(resolveBtn);
-
-    const openAllBtn = document.createElement('button');
-    openAllBtn.className = 'folder-action-btn open-all-btn';
-    openAllBtn.title = 'Open all in tabs';
-    openAllBtn.textContent = '🚀 Open all';
-    actionsDiv.appendChild(openAllBtn);
-
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'folder-action-btn delete-folder-btn';
-    deleteBtn.title = 'Excluir pasta';
-    deleteBtn.textContent = '🗑️';
-    actionsDiv.appendChild(deleteBtn);
-
+    const toggleSpan = document.createElement('span'); toggleSpan.className = 'folder-toggle'; toggleSpan.textContent = '▼'; headerEl.appendChild(toggleSpan);
+    const iconSpan = document.createElement('span'); iconSpan.className = 'folder-icon'; iconSpan.textContent = '📁'; headerEl.appendChild(iconSpan);
+    const nameSpan = document.createElement('span'); nameSpan.className = 'folder-name'; nameSpan.textContent = folder.title; headerEl.appendChild(nameSpan);
+    const countSpan = document.createElement('span'); countSpan.className = 'folder-count'; countSpan.textContent = bookmarkCount; headerEl.appendChild(countSpan);
+    const actionsDiv = document.createElement('div'); actionsDiv.className = 'folder-actions';
+    const shuffleBtn = document.createElement('button'); shuffleBtn.className = 'folder-action-btn shuffle-btn'; shuffleBtn.title = 'Shuffle bookmarks'; shuffleBtn.textContent = '🔀'; actionsDiv.appendChild(shuffleBtn);
+    const resolveBtn = document.createElement('button'); resolveBtn.className = 'folder-action-btn resolve-btn'; resolveBtn.title = 'Resolve URLs'; resolveBtn.textContent = '🔍'; actionsDiv.appendChild(resolveBtn);
+    const openAllBtn = document.createElement('button'); openAllBtn.className = 'folder-action-btn open-all-btn'; openAllBtn.title = 'Open all in tabs'; openAllBtn.textContent = '🚀 Open all'; actionsDiv.appendChild(openAllBtn);
+    const deleteBtn = document.createElement('button'); deleteBtn.className = 'folder-action-btn delete-folder-btn'; deleteBtn.title = 'Excluir pasta'; deleteBtn.textContent = '🗑️'; actionsDiv.appendChild(deleteBtn);
     headerEl.appendChild(actionsDiv);
-
     if (isVirtualFolder) {
-        shuffleBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            shuffleVirtualFolder(folderEl);
-        });
-
-        resolveBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            resolveVirtualFolder(folder);
-        });
-
-        openAllBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            openAllInVirtualFolder(folder);
-        });
-
-        deleteBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            deleteVirtualFolder(folder);
-        });
+        shuffleBtn.addEventListener('click', (e) => { e.stopPropagation(); shuffleVirtualFolder(folderEl); });
+        resolveBtn.addEventListener('click', (e) => { e.stopPropagation(); resolveVirtualFolder(folder); });
+        openAllBtn.addEventListener('click', (e) => { e.stopPropagation(); openAllInVirtualFolder(folder); });
+        deleteBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteVirtualFolder(folder); });
     } else {
-        shuffleBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            shuffleFolder(folder.id, folderEl);
-        });
-
-        resolveBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            resolveFolder(folder.id, folderEl);
-        });
-
-        openAllBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            openAllInFolder(folder.id);
-        });
-
-        deleteBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            deleteFolder(folder.id);
-        });
+        shuffleBtn.addEventListener('click', (e) => { e.stopPropagation(); shuffleFolder(folder.id, folderEl); });
+        resolveBtn.addEventListener('click', (e) => { e.stopPropagation(); resolveFolder(folder.id, folderEl); });
+        openAllBtn.addEventListener('click', (e) => { e.stopPropagation(); openAllInFolder(folder.id); });
+        deleteBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteFolder(folder.id); });
     }
-
-    headerEl.addEventListener('click', (e) => {
-        if (!e.target.closest('.folder-action-btn')) {
-            folderEl.classList.toggle('collapsed');
-        }
-    });
-
+    headerEl.addEventListener('click', (e) => { if (!e.target.closest('.folder-action-btn')) { folderEl.classList.toggle('collapsed'); } });
     folderEl.appendChild(headerEl);
-
     if (folder.children && folder.children.length > 0) {
-        const contentEl = document.createElement('div');
-        contentEl.className = 'folder-content';
-
+        const contentEl = document.createElement('div'); contentEl.className = 'folder-content';
         folder.children.forEach(child => {
-            if (child.type === 'folder') {
-                contentEl.appendChild(createFolderElement(child));
-            } else if (child.type === 'bookmark') {
-                contentEl.appendChild(createBookmarkElement(child));
-            }
+            if (child.type === 'folder') { contentEl.appendChild(createFolderElement(child)); }
+            else if (child.type === 'bookmark') { contentEl.appendChild(createBookmarkElement(child)); }
         });
-
         folderEl.appendChild(contentEl);
     }
-
     return folderEl;
 }
 
@@ -512,526 +371,212 @@ function createBookmarkElement(bookmark) {
     itemEl.dataset.id = bookmark.id;
     itemEl.dataset.url = bookmark.url;
 
-    // Get favicon
-    const faviconUrl = getFaviconUrl(bookmark.url);
+    // Add status indicator
+    const status = getBookmarkStatus(bookmark);
+    if (status === 'unresolved') { itemEl.classList.add('status-unresolved'); }
+    else if (status === 'error') { itemEl.classList.add('status-error'); }
 
+    const faviconUrl = getFaviconUrl(bookmark.url);
     if (faviconUrl) {
-        const favicon = document.createElement('img');
-        favicon.className = 'bookmark-favicon';
-        favicon.src = faviconUrl;
-        const placeholder = document.createElement('div');
-        placeholder.className = 'bookmark-favicon-placeholder';
-        placeholder.style.display = 'none';
-        placeholder.textContent = '🔗';
-        favicon.onerror = function () {
-            this.style.display = 'none';
-            placeholder.style.display = 'flex';
-        };
-        itemEl.appendChild(favicon);
-        itemEl.appendChild(placeholder);
+        const favicon = document.createElement('img'); favicon.className = 'bookmark-favicon'; favicon.src = faviconUrl;
+        const placeholder = document.createElement('div'); placeholder.className = 'bookmark-favicon-placeholder'; placeholder.style.display = 'none'; placeholder.textContent = '🔗';
+        favicon.onerror = function () { this.style.display = 'none'; placeholder.style.display = 'flex'; };
+        itemEl.appendChild(favicon); itemEl.appendChild(placeholder);
     } else {
-        const placeholder = document.createElement('div');
-        placeholder.className = 'bookmark-favicon-placeholder';
-        placeholder.textContent = '🔗';
-        itemEl.appendChild(placeholder);
+        const placeholder = document.createElement('div'); placeholder.className = 'bookmark-favicon-placeholder'; placeholder.textContent = '🔗'; itemEl.appendChild(placeholder);
     }
 
-    const titleSpan = document.createElement('span');
-    titleSpan.className = 'bookmark-title';
-    titleSpan.title = bookmark.url;
-    titleSpan.textContent = bookmark.title || bookmark.url;
-    itemEl.appendChild(titleSpan);
+    const titleSpan = document.createElement('span'); titleSpan.className = 'bookmark-title'; titleSpan.title = bookmark.url; titleSpan.textContent = bookmark.title || bookmark.url; itemEl.appendChild(titleSpan);
 
-    // Exclude domain button
-    const excludeBtn = document.createElement('button');
-    excludeBtn.className = 'bookmark-exclude-btn';
-    excludeBtn.title = 'Exclude this domain from resolution';
-    excludeBtn.textContent = '🚫';
+    const excludeBtn = document.createElement('button'); excludeBtn.className = 'bookmark-exclude-btn'; excludeBtn.title = 'Exclude this domain from resolution'; excludeBtn.textContent = '🚫';
     excludeBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
         try {
             const hostname = new URL(bookmark.url).hostname.replace(/^www\./, '');
-            const result = await browser.runtime.sendMessage({
-                action: 'addExcludedDomain',
-                domain: hostname
-            });
-            if (result && result.success) {
-                showExcludeToast(hostname);
-            }
-        } catch (err) {
-            console.error('Error excluding domain:', err);
-        }
+            const result = await browser.runtime.sendMessage({ action: 'addExcludedDomain', domain: hostname });
+            if (result && result.success) { showExcludeToast(hostname); }
+        } catch (err) { console.error('Error excluding domain:', err); }
     });
     itemEl.appendChild(excludeBtn);
-
     itemEl.addEventListener('click', () => openAndTrash(bookmark.id));
-
     return itemEl;
 }
 
 function getFaviconUrl(url) {
-    try {
-        const urlObj = new URL(url);
-        return `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=32`;
-    } catch {
-        return null;
-    }
+    try { const urlObj = new URL(url); return `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=32`; } catch { return null; }
 }
 
 function countBookmarks(folder) {
     let count = 0;
-    if (folder.children) {
-        folder.children.forEach(child => {
-            if (child.type === 'bookmark') {
-                count++;
-            } else if (child.type === 'folder') {
-                count += countBookmarks(child);
-            }
-        });
-    }
+    if (folder.children) { folder.children.forEach(child => { if (child.type === 'bookmark') { count++; } else if (child.type === 'folder') { count += countBookmarks(child); } }); }
     return count;
 }
 
 function removeElementAndUpdateCounts(elementSelector, isFolder = false) {
-    const el = document.querySelector(elementSelector);
-    if (!el) return;
-
+    const el = document.querySelector(elementSelector); if (!el) return;
     const removedCount = isFolder ? el.querySelectorAll('.bookmark-item').length : 1;
-
-    let current = el.parentElement;
-    const ancestorFolders = [];
-    while (current) {
-        const ancestor = current.closest('.folder');
-        if (ancestor) {
-            ancestorFolders.push(ancestor);
-            current = ancestor.parentElement;
-        } else {
-            break;
-        }
-    }
-
+    let current = el.parentElement; const ancestorFolders = [];
+    while (current) { const ancestor = current.closest('.folder'); if (ancestor) { ancestorFolders.push(ancestor); current = ancestor.parentElement; } else { break; } }
     el.remove();
-
     ancestorFolders.forEach(ancestorEl => {
         const header = Array.from(ancestorEl.children).find(c => c.classList.contains('folder-header'));
-        if (header) {
-            const countSpan = header.querySelector('.folder-count');
-            if (countSpan) {
-                const count = parseInt(countSpan.textContent, 10);
-                if (!isNaN(count) && count > 0) {
-                    const newCount = Math.max(0, count - removedCount);
-                    countSpan.textContent = newCount;
-                    if (newCount === 0) {
-                        ancestorEl.style.display = 'none';
-                    }
-                }
-            }
-        }
+        if (header) { const countSpan = header.querySelector('.folder-count'); if (countSpan) { const count = parseInt(countSpan.textContent, 10); if (!isNaN(count) && count > 0) { const newCount = Math.max(0, count - removedCount); countSpan.textContent = newCount; if (newCount === 0) { ancestorEl.style.display = 'none'; } } } }
     });
-
-    const remaining = document.querySelectorAll('.bookmark-item');
-    if (remaining.length === 0) {
-        showEmpty(true);
-    }
+    const remaining = document.querySelectorAll('.bookmark-item'); if (remaining.length === 0) { showEmpty(true); }
 }
 
 async function openAndTrash(bookmarkId, skipDOMRemove = false) {
-    try {
-        await browser.runtime.sendMessage({
-            action: 'openAndTrash',
-            bookmarkId
-        });
-        
-        if (!skipDOMRemove) {
-            removeElementAndUpdateCounts(`.bookmark-item[data-id="${bookmarkId}"]`, false);
-        }
-    } catch (error) {
-        console.error('Error opening bookmark:', error);
-    }
+    try { await browser.runtime.sendMessage({ action: 'openAndTrash', bookmarkId }); if (!skipDOMRemove) { removeElementAndUpdateCounts(`.bookmark-item[data-id="${bookmarkId}"]`, false); } } catch (error) { console.error('Error opening bookmark:', error); }
 }
 
 async function openAllInFolder(folderId) {
-    try {
-        const result = await browser.runtime.sendMessage({
-            action: 'openAllInFolder',
-            folderId
-        });
-        if (result && result.count > 0) {
-            removeElementAndUpdateCounts(`.folder[data-id="${folderId}"]`, true);
-        }
-    } catch (error) {
-        console.error('Error opening all bookmarks:', error);
-    }
+    try { const result = await browser.runtime.sendMessage({ action: 'openAllInFolder', folderId }); if (result && result.count > 0) { removeElementAndUpdateCounts(`.folder[data-id="${folderId}"]`, true); } } catch (error) { console.error('Error opening all bookmarks:', error); }
 }
 
 async function deleteFolder(folderId) {
-    try {
-        await browser.runtime.sendMessage({
-            action: 'deleteFolder',
-            folderId
-        });
-        removeElementAndUpdateCounts(`.folder[data-id="${folderId}"]`, true);
-    } catch (error) {
-        console.error('Error deleting folder:', error);
-    }
+    try { await browser.runtime.sendMessage({ action: 'deleteFolder', folderId }); removeElementAndUpdateCounts(`.folder[data-id="${folderId}"]`, true); } catch (error) { console.error('Error deleting folder:', error); }
 }
 
-// Virtual folder operations (domain grouping)
 function collectIdsFromVirtualFolder(folder) {
-    const ids = [];
-    if (!folder.children) return ids;
-    for (const child of folder.children) {
-        if (child.type === 'bookmark') {
-            ids.push(child.id);
-        } else if (child.type === 'folder' && child.children) {
-            ids.push(...collectIdsFromVirtualFolder(child));
-        }
-    }
+    const ids = []; if (!folder.children) return ids;
+    for (const child of folder.children) { if (child.type === 'bookmark') { ids.push(child.id); } else if (child.type === 'folder' && child.children) { ids.push(...collectIdsFromVirtualFolder(child)); } }
     return ids;
 }
 
 async function openAllInVirtualFolder(folder) {
-    const ids = collectIdsFromVirtualFolder(folder);
-    if (ids.length === 0) return;
-    
-    try {
-        await browser.runtime.sendMessage({
-            action: 'openMultipleAndTrash',
-            bookmarkIds: ids
-        });
-        removeElementAndUpdateCounts(`.folder[data-id="${folder.id}"]`, true);
-    } catch (e) {
-        console.error('Error opening all in virtual folder:', e);
-    }
+    const ids = collectIdsFromVirtualFolder(folder); if (ids.length === 0) return;
+    try { await browser.runtime.sendMessage({ action: 'openMultipleAndTrash', bookmarkIds: ids }); removeElementAndUpdateCounts(`.folder[data-id="${folder.id}"]`, true); } catch (e) { console.error('Error opening all in virtual folder:', e); }
 }
 
 async function deleteVirtualFolder(folder) {
     const ids = collectIdsFromVirtualFolder(folder);
-    for (const id of ids) {
-        try {
-            await browser.runtime.sendMessage({ action: 'deleteBookmark', bookmarkId: id });
-        } catch (e) { /* ignore */ }
-    }
+    for (const id of ids) { try { await browser.runtime.sendMessage({ action: 'deleteBookmark', bookmarkId: id }); } catch (e) { /* ignore */ } }
     removeElementAndUpdateCounts(`.folder[data-id="${folder.id}"]`, true);
 }
 
-// Shuffle bookmarks in a real folder (persists to bookmarks API)
 async function shuffleFolder(folderId, folderEl) {
     try {
-        const result = await browser.runtime.sendMessage({
-            action: 'shuffleFolder',
-            folderId
-        });
-
-        if (result && result.success) {
-            // Reload the folder content from the updated data
-            await silentLoadBookmarks();
-
-            // Re-expand the shuffled folder
-            const updatedFolderEl = document.querySelector(`.folder[data-id="${folderId}"]`);
-            if (updatedFolderEl) {
-                updatedFolderEl.classList.remove('collapsed');
-            }
-        }
-    } catch (error) {
-        console.error('Error shuffling folder:', error);
-    }
+        const result = await browser.runtime.sendMessage({ action: 'shuffleFolder', folderId });
+        if (result && result.success) { await silentLoadBookmarks(); const updatedFolderEl = document.querySelector(`.folder[data-id="${folderId}"]`); if (updatedFolderEl) { updatedFolderEl.classList.remove('collapsed'); } }
+    } catch (error) { console.error('Error shuffling folder:', error); }
 }
 
-// Shuffle bookmarks in a virtual folder (DOM only, not persisted)
 function shuffleVirtualFolder(folderEl) {
-    const contentEl = folderEl.querySelector('.folder-content');
-    if (!contentEl) return;
-
+    const contentEl = folderEl.querySelector('.folder-content'); if (!contentEl) return;
     const children = Array.from(contentEl.children);
-    // Fisher-Yates shuffle
-    for (let i = children.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [children[i], children[j]] = [children[j], children[i]];
-    }
-    // Re-append in new order
+    for (let i = children.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [children[i], children[j]] = [children[j], children[i]]; }
     children.forEach(child => contentEl.appendChild(child));
 }
 
-// Resolve URLs in a real folder
 async function resolveFolder(folderId, folderEl) {
     const resolveBtn = folderEl.querySelector('.resolve-btn');
-    if (resolveBtn) {
-        resolveBtn.disabled = true;
-        resolveBtn.classList.add('resolving');
-        resolveBtn.textContent = '';
-    }
-
-    // Register pending resolve so the listener can clean up the button later
-    const resolveKey = `folder-${folderId}`;
-    pendingResolves.set(resolveKey, { resolveBtn });
-
-    try {
-        const ack = await browser.runtime.sendMessage({
-            action: 'resolveFolder',
-            folderId
-        });
-        console.log(`[LinkScout Sidebar] Resolve folder ${folderId} started:`, ack);
-        // The actual result will arrive via the resolveComplete listener.
-    } catch (error) {
-        console.error('Error starting folder resolve:', error);
-        pendingResolves.delete(resolveKey);
-        if (resolveBtn) {
-            resolveBtn.disabled = false;
-            resolveBtn.classList.remove('resolving');
-            resolveBtn.textContent = '🔍';
-        }
-    }
+    if (resolveBtn) { resolveBtn.disabled = true; resolveBtn.classList.add('resolving'); resolveBtn.textContent = ''; }
+    const resolveKey = `folder-${folderId}`; pendingResolves.set(resolveKey, { resolveBtn });
+    try { const ack = await browser.runtime.sendMessage({ action: 'resolveFolder', folderId }); console.log(`[LinkScout Sidebar] Resolve folder ${folderId} started:`, ack); }
+    catch (error) { console.error('Error starting folder resolve:', error); pendingResolves.delete(resolveKey); if (resolveBtn) { resolveBtn.disabled = false; resolveBtn.classList.remove('resolving'); resolveBtn.textContent = '🔍'; } }
 }
 
-// Resolve URLs in a virtual folder
 async function resolveVirtualFolder(folder) {
-    const ids = collectIdsFromVirtualFolder(folder);
-    if (ids.length === 0) return;
-
-    const folderEl = document.querySelector(`.folder[data-id="${folder.id}"]`);
-    const resolveBtn = folderEl ? folderEl.querySelector('.resolve-btn') : null;
-    if (resolveBtn) {
-        resolveBtn.disabled = true;
-        resolveBtn.classList.add('resolving');
-        resolveBtn.textContent = '';
-    }
-
-    // Register pending resolve so the listener can clean up the button later
-    const resolveKey = `virtual-${folder.id}`;
-    pendingResolves.set(resolveKey, { resolveBtn });
-
-    try {
-        const ack = await browser.runtime.sendMessage({
-            action: 'resolveMultipleUrls',
-            bookmarkIds: ids,
-            virtualFolderId: folder.id
-        });
-        console.log(`[LinkScout Sidebar] Resolve virtual folder ${folder.id} started:`, ack);
-        // The actual result will arrive via the resolveComplete listener.
-    } catch (e) {
-        console.error('Error starting virtual folder resolve:', e);
-        pendingResolves.delete(resolveKey);
-        if (resolveBtn) {
-            resolveBtn.disabled = false;
-            resolveBtn.classList.remove('resolving');
-            resolveBtn.textContent = '🔍';
-        }
-    }
+    const ids = collectIdsFromVirtualFolder(folder); if (ids.length === 0) return;
+    const folderEl = document.querySelector(`.folder[data-id="${folder.id}"]`); const resolveBtn = folderEl ? folderEl.querySelector('.resolve-btn') : null;
+    if (resolveBtn) { resolveBtn.disabled = true; resolveBtn.classList.add('resolving'); resolveBtn.textContent = ''; }
+    const resolveKey = `virtual-${folder.id}`; pendingResolves.set(resolveKey, { resolveBtn });
+    try { const ack = await browser.runtime.sendMessage({ action: 'resolveMultipleUrls', bookmarkIds: ids, virtualFolderId: folder.id }); console.log(`[LinkScout Sidebar] Resolve virtual folder ${folder.id} started:`, ack); }
+    catch (e) { console.error('Error starting virtual folder resolve:', e); pendingResolves.delete(resolveKey); if (resolveBtn) { resolveBtn.disabled = false; resolveBtn.classList.remove('resolving'); resolveBtn.textContent = '🔍'; } }
 }
 
-// Show resolve result badge on folder header
 function showResolveResult(folderEl, result) {
-    const header = folderEl.querySelector('.folder-header');
-    if (!header) return;
-
-    const badge = document.createElement('span');
-    badge.className = 'resolve-result-badge';
-    if (result.resolved > 0) {
-        badge.textContent = `✅ ${result.resolved} resolvido(s)`;
-        badge.classList.add('success');
-    } else {
-        badge.textContent = '✅ Tudo atualizado';
-        badge.classList.add('neutral');
-    }
+    const header = folderEl.querySelector('.folder-header'); if (!header) return;
+    const badge = document.createElement('span'); badge.className = 'resolve-result-badge';
+    if (result.resolved > 0) { badge.textContent = `✅ ${result.resolved} resolvido(s)`; badge.classList.add('success'); }
+    else { badge.textContent = '✅ Tudo atualizado'; badge.classList.add('neutral'); }
     header.appendChild(badge);
-
-    setTimeout(() => {
-        badge.classList.add('fade-out');
-        setTimeout(() => badge.remove(), 500);
-    }, 3000);
+    setTimeout(() => { badge.classList.add('fade-out'); setTimeout(() => badge.remove(), 500); }, 3000);
 }
 
+function escapeHtml(text) { const div = document.createElement('div'); div.textContent = text; return div.innerHTML; }
 
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
+function collapseAllFolders() { const folders = bookmarkTreeEl.querySelectorAll('.folder'); folders.forEach(folder => folder.classList.add('collapsed')); }
+function expandAllFolders() { const folders = bookmarkTreeEl.querySelectorAll('.folder'); folders.forEach(folder => folder.classList.remove('collapsed')); }
 
-function collapseAllFolders() {
-    const folders = bookmarkTreeEl.querySelectorAll('.folder');
-    folders.forEach(folder => folder.classList.add('collapsed'));
-}
-
-function expandAllFolders() {
-    const folders = bookmarkTreeEl.querySelectorAll('.folder');
-    folders.forEach(folder => folder.classList.remove('collapsed'));
-}
-
-// Group by Domain
-function toggleGroupByDomain() {
-    groupByDomain = !groupByDomain;
-    groupByDomainBtn.classList.toggle('active', groupByDomain);
-    renderBookmarkTree();
-}
+function toggleGroupByDomain() { groupByDomain = !groupByDomain; groupByDomainBtn.classList.toggle('active', groupByDomain); renderBookmarkTree(); }
 
 function collectAllBookmarksFromTree(items) {
-    const bookmarks = [];
-    if (!items) return bookmarks;
-    for (const item of items) {
-        if (item.type === 'bookmark') {
-            bookmarks.push(item);
-        } else if (item.type === 'folder' && item.children) {
-            bookmarks.push(...collectAllBookmarksFromTree(item.children));
-        }
-    }
+    const bookmarks = []; if (!items) return bookmarks;
+    for (const item of items) { if (item.type === 'bookmark') { bookmarks.push(item); } else if (item.type === 'folder' && item.children) { bookmarks.push(...collectAllBookmarksFromTree(item.children)); } }
     return bookmarks;
 }
 
 function groupBookmarksByDomain(items) {
-    const allBookmarks = collectAllBookmarksFromTree(items);
-    const domainMap = {};
-
-    for (const bm of allBookmarks) {
-        let domain = 'other';
-        try {
-            domain = new URL(bm.url).hostname.replace(/^www\./, '');
-        } catch { /* keep 'other' */ }
-
-        if (!domainMap[domain]) {
-            domainMap[domain] = [];
+    const allBookmarks = collectAllBookmarksFromTree(items); const domainMap = {};
+    for (const bm of allBookmarks) { let domain = 'other'; try { domain = new URL(bm.url).hostname.replace(/^www\./, ''); } catch { /* keep 'other' */ } if (!domainMap[domain]) { domainMap[domain] = []; } domainMap[domain].push(bm); }
+    return Object.keys(domainMap).sort((a, b) => a.localeCompare(b)).map(domain => {
+        const bookmarks = domainMap[domain];
+        if (bookmarks.length > linksPerFolder) {
+            const children = [];
+            for (let i = 0; i < bookmarks.length; i += linksPerFolder) { const chunk = bookmarks.slice(i, i + linksPerFolder); const startNum = i + 1; const endNum = i + chunk.length; children.push({ type: 'folder', id: `domain-${domain}-${startNum}-${endNum}`, title: `${startNum}-${endNum}`, children: chunk, updatedAt: 0, dateAdded: 0 }); }
+            return { type: 'folder', id: `domain-${domain}`, title: domain, children, updatedAt: 0, dateAdded: 0 };
         }
-        domainMap[domain].push(bm);
-    }
-
-    // Convert to virtual folder objects, splitting large domains into subfolders
-    return Object.keys(domainMap)
-        .sort((a, b) => a.localeCompare(b))
-        .map(domain => {
-            const bookmarks = domainMap[domain];
-
-            if (bookmarks.length > linksPerFolder) {
-                // Split into numbered subfolders
-                const children = [];
-                for (let i = 0; i < bookmarks.length; i += linksPerFolder) {
-                    const chunk = bookmarks.slice(i, i + linksPerFolder);
-                    const startNum = i + 1;
-                    const endNum = i + chunk.length;
-                    children.push({
-                        type: 'folder',
-                        id: `domain-${domain}-${startNum}-${endNum}`,
-                        title: `${startNum}-${endNum}`,
-                        children: chunk,
-                        updatedAt: 0,
-                        dateAdded: 0
-                    });
-                }
-                return {
-                    type: 'folder',
-                    id: `domain-${domain}`,
-                    title: domain,
-                    children,
-                    updatedAt: 0,
-                    dateAdded: 0
-                };
-            }
-
-            return {
-                type: 'folder',
-                id: `domain-${domain}`,
-                title: domain,
-                children: bookmarks,
-                updatedAt: 0,
-                dateAdded: 0
-            };
-        });
-}
-
-// Search Handler
-function handleSearch(e) {
-    searchQuery = e.target.value.toLowerCase().trim();
-    renderBookmarkTree();
-}
-
-// Sort Config
-function toggleSortOrder() {
-    currentSortOrder = currentSortOrder === 'desc' ? 'asc' : 'desc';
-    updateSortIcon();
-    renderBookmarkTree();
-}
-
-function updateSortIcon() {
-    sortBtn.textContent = currentSortOrder === 'desc' ? '⬇️' : '⬆️';
-    sortBtn.title = currentSortOrder === 'desc' ? 'Sort: Newest First' : 'Sort: Oldest First';
-}
-
-// Recursive Sort
-function sortNodes(nodes) {
-    if (!nodes) return [];
-
-    return nodes.sort((a, b) => {
-        // Folders always first? Replicating background logic preference
-        const aIsFolder = a.type === 'folder';
-        const bIsFolder = b.type === 'folder';
-
-        if (aIsFolder && bIsFolder) {
-            // Sort folders by time (updatedAt > dateAdded > title)
-            const updatedA = a.updatedAt || 0;
-            const updatedB = b.updatedAt || 0;
-
-            if (updatedA !== updatedB) {
-                return currentSortOrder === 'desc' ? updatedB - updatedA : updatedA - updatedB;
-            }
-
-            // Fallback to creation date
-            const createdA = a.dateAdded || 0;
-            const createdB = b.dateAdded || 0;
-
-            if (createdA !== createdB) {
-                return currentSortOrder === 'desc' ? createdB - createdA : createdA - createdB;
-            }
-
-            // Fallback to title
-            return a.title.localeCompare(b.title);
-        }
-
-        if (aIsFolder && !bIsFolder) return -1;
-        if (!aIsFolder && bIsFolder) return 1;
-
-        return 0; // Keep bookmarks order (or sort them too if needed, but request focused on folders)
-    }).map(node => {
-        if (node.children) {
-            node.children = sortNodes(node.children);
-        }
-        return node;
+        return { type: 'folder', id: `domain-${domain}`, title: domain, children: bookmarks, updatedAt: 0, dateAdded: 0 };
     });
 }
 
-// Recursive Filter
+function handleSearch(e) { searchQuery = e.target.value.toLowerCase().trim(); renderBookmarkTree(); }
+
+function toggleSortOrder() { currentSortOrder = currentSortOrder === 'desc' ? 'asc' : 'desc'; updateSortIcon(); renderBookmarkTree(); }
+
+function updateSortIcon() { sortBtn.textContent = currentSortOrder === 'desc' ? '⬇️' : '⬆️'; sortBtn.title = currentSortOrder === 'desc' ? 'Sort: Newest First' : 'Sort: Oldest First'; }
+
+// Update filter button appearance based on current selection
+function updateFilterButton() {
+    if (statusFilter === 'all') { filterStatusBtn.textContent = '⚡'; filterStatusBtn.classList.remove('active'); filterStatusBtn.title = 'Filter by status'; }
+    else if (statusFilter === 'unresolved') { filterStatusBtn.textContent = '⚠️'; filterStatusBtn.classList.add('active'); filterStatusBtn.title = 'Showing: Unresolved only'; }
+    else if (statusFilter === 'error') { filterStatusBtn.textContent = '❌'; filterStatusBtn.classList.add('active'); filterStatusBtn.title = 'Showing: Error only'; }
+    filterStatusDropdown.querySelectorAll('.filter-option').forEach(opt => { opt.classList.toggle('selected', opt.dataset.filter === statusFilter); });
+}
+
+function sortNodes(nodes) {
+    if (!nodes) return [];
+    return nodes.sort((a, b) => {
+        const aIsFolder = a.type === 'folder'; const bIsFolder = b.type === 'folder';
+        if (aIsFolder && bIsFolder) {
+            const updatedA = a.updatedAt || 0; const updatedB = b.updatedAt || 0;
+            if (updatedA !== updatedB) { return currentSortOrder === 'desc' ? updatedB - updatedA : updatedA - updatedB; }
+            const createdA = a.dateAdded || 0; const createdB = b.dateAdded || 0;
+            if (createdA !== createdB) { return currentSortOrder === 'desc' ? createdB - createdA : createdA - createdB; }
+            return a.title.localeCompare(b.title);
+        }
+        if (aIsFolder && !bIsFolder) return -1; if (!aIsFolder && bIsFolder) return 1; return 0;
+    }).map(node => { if (node.children) { node.children = sortNodes(node.children); } return node; });
+}
+
 function filterNodes(nodes, query) {
     if (!query) return nodes;
-
     return nodes.filter(node => {
-        const matchesRequest = (node.title && node.title.toLowerCase().includes(query)) ||
-            (node.url && node.url.toLowerCase().includes(query));
-
-        if (node.children) {
-            node.children = filterNodes(node.children, query);
-            // If it's a folder, keep it if it matches OR if it has matching children
-            return matchesRequest || node.children.length > 0;
-        }
-
+        const matchesRequest = (node.title && node.title.toLowerCase().includes(query)) || (node.url && node.url.toLowerCase().includes(query));
+        if (node.children) { node.children = filterNodes(node.children, query); return matchesRequest || node.children.length > 0; }
         return matchesRequest;
     });
 }
 
-// Show a brief toast when a domain is excluded from resolution
+// Filter by link status (unresolved / error)
+function filterByStatus(nodes, filter) {
+    if (filter === 'all') return nodes;
+    return nodes.filter(node => {
+        if (node.type === 'bookmark') {
+            if (filter === 'unresolved') return isUnresolved(node);
+            if (filter === 'error') return hasError(node);
+            return true;
+        }
+        if (node.children) { node.children = filterByStatus(node.children, filter); return node.children.length > 0; }
+        return false;
+    });
+}
+
 function showExcludeToast(domain) {
-    // Remove any existing toast
-    const existing = document.querySelector('.exclude-toast');
-    if (existing) existing.remove();
-
-    const toast = document.createElement('div');
-    toast.className = 'exclude-toast';
-    toast.textContent = `🚫 ${domain} excluded from resolution`;
+    const existing = document.querySelector('.exclude-toast'); if (existing) existing.remove();
+    const toast = document.createElement('div'); toast.className = 'exclude-toast'; toast.textContent = `🚫 ${domain} excluded from resolution`;
     document.body.appendChild(toast);
-
-    // Trigger entrance animation
     requestAnimationFrame(() => toast.classList.add('visible'));
-
-    setTimeout(() => {
-        toast.classList.remove('visible');
-        setTimeout(() => toast.remove(), 300);
-    }, 2000);
+    setTimeout(() => { toast.classList.remove('visible'); setTimeout(() => toast.remove(), 300); }, 2000);
 }

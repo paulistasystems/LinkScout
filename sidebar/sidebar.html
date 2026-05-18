@@ -2,44 +2,50 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <title>LinkScout - Bookmarks</title>
-    <link rel="stylesheet" href="sidebar.css">
+  <meta charset="UTF-8">
+  <title>LinkScout - Bookmarks</title>
+  <link rel="stylesheet" href="sidebar.css">
 </head>
 
 <body>
-    <div class="sidebar-container">
-        <header class="sidebar-header">
-            <h1>🔗 LinkScout</h1>
-            <div class="header-actions">
-                <div class="search-container">
-                    <input type="text" id="searchInput" placeholder="Search..." title="Search bookmarks">
-                </div>
-                <button id="groupByDomainBtn" class="icon-btn" title="Group by domain">🌐</button>
-                <button id="sortBtn" class="icon-btn" title="Sort Order">⬇️</button>
-                <div class="divider"></div>
-                <button id="collapseAllBtn" class="icon-btn" title="Collapse all">➖</button>
-                <button id="expandAllBtn" class="icon-btn" title="Expand all">➕</button>
-                <button id="refreshBtn" class="icon-btn" title="Refresh">🔄</button>
-            </div>
-        </header>
-
-        <div class="sidebar-content">
-            <div id="loadingState" class="state-message">
-                <span class="spinner"></span>
-                Loading bookmarks...
-            </div>
-
-            <div id="emptyState" class="state-message" style="display: none;">
-                📭 No bookmarks saved yet.
-            </div>
-
-            <div id="bookmarkTree" class="bookmark-tree"></div>
+  <div class="sidebar-container">
+    <header class="sidebar-header">
+      <h1>🔗 LinkScout</h1>
+      <div class="header-actions">
+        <div class="search-container">
+          <input type="text" id="searchInput" placeholder="Search..." title="Search bookmarks">
+          <button id="filterStatusBtn" class="icon-btn filter-btn" title="Filter by status">⚡</button>
+          <div id="filterStatusDropdown" class="filter-dropdown" style="display: none;">
+            <div class="filter-option" data-filter="all">⚡ All links</div>
+            <div class="filter-option" data-filter="unresolved">⚠️ Unresolved</div>
+            <div class="filter-option" data-filter="error">❌ Error</div>
+          </div>
         </div>
+        <button id="groupByDomainBtn" class="icon-btn" title="Group by domain">🌐</button>
+        <button id="sortBtn" class="icon-btn" title="Sort Order">⬇️</button>
+        <div class="divider"></div>
+        <button id="collapseAllBtn" class="icon-btn" title="Collapse all">➖</button>
+        <button id="expandAllBtn" class="icon-btn" title="Expand all">➕</button>
+        <button id="refreshBtn" class="icon-btn" title="Refresh">🔄</button>
+      </div>
+    </header>
 
+    <div class="sidebar-content">
+      <div id="loadingState" class="state-message">
+        <span class="spinner"></span>
+        Loading bookmarks...
+      </div>
+
+      <div id="emptyState" class="state-message" style="display: none;">
+        📭 No bookmarks saved yet.
+      </div>
+
+      <div id="bookmarkTree" class="bookmark-tree"></div>
     </div>
 
-    <script src="sidebar.js"></script>
+  </div>
+
+  <script src="sidebar.js"></script>
 </body>
 
 </html>

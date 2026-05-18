@@ -6,14 +6,12 @@ This document details the planning for LinkScout's evolution, including new feat
 
 ## 🛠️ Next Steps (Short Term)
 
-
 ### 🔍 Search and Filter Improvements
-- [ ] Filter to show only "unresolved" or "error" links.
+- [x] Filter to show only "unresolved" or "error" links.
 
 ---
 
 ## 🚀 Planned (Medium Term)
-
 
 ### 🖱️ Drag & Drop in Sidebar
 - [ ] Manual reorganization of links between folders via drag and drop.
@@ -28,8 +26,7 @@ This document details the planning for LinkScout's evolution, including new feat
 ## 🐛 Fixes and Continuous Maintenance
 
 ### 🐞 Critical Fixes
-
-Link resolution button not working in sidebar for Google News links, which are legacy links that were saved previously.
+*(none currently)*
 
 ### ⚙️ Improvements and Maintenance
 - [ ] Performance monitoring for collections with > 10,000 links.
@@ -38,11 +35,10 @@ Link resolution button not working in sidebar for Google News links, which are l
 ---
 
 ## ✅ Recently Completed
-
+- [x] **Status Filter in Sidebar**: Added ⚡ filter button in sidebar header to filter bookmarks by link status: All, Unresolved (redirect URLs like t.co, bit.ly), or Error (failed resolution). Visual indicators: orange left border for unresolved, red for errors. Background script enriches bookmark tree with `redirectResolved` and `originalUrl` from IndexedDB.
+- [x] **Google News URL Resolution (sidebar)**: Fixed bug where the sidebar link resolution button did not work for Google News legacy links. The root cause was that `ensureMigratedSettings()` removed `news.google.com` from `aggregatorDomains` (treating it as a "pure redirector" that resolves via HEAD), but Google News uses JavaScript redirects that only the Phantom Tab can follow. The fix: (1) removed `news.google.com` from the `pureRedirects` cleanup list, (2) added `news.google.com` to the default `aggregatorDomains` list, (3) added a migration to restore `news.google.com` for existing users who had it stripped by the previous cleanup.
 - [x] **Facebook URL Resolution (sidebar)**: Fixed bug where the sidebar link resolution button did not work for Facebook/Messenger URLs. The issue was that Facebook URLs using JavaScript redirection (not HTTP 3xx) fell into the HEAD/GET path, which cannot follow JS redirects. Now all Facebook/Messenger URLs are routed to the Phantom Tab (which is authenticated in the user's browser). Also added a safety net against incorrect resolution for login/authentication pages.
-
 - [x] **Link Origin (Save Link button)**: Fixed bug where the origin URL was never saved when using "Save This Link" or "Save Selection Links". The cause was a global duplicate check in IndexedDB that rejected the origin if it already existed in any folder. Now the origin is handled separately: saved directly in the destination folder with duplicate checking only at the folder level, ensuring the origin reference is always present.
-
 - [x] **Domain Exclusion List**: Implemented option to exclude domains from automatic URL resolution. Domains can be added via the 🚫 button in the sidebar bookmarks or manually through the Preferences page. The list can be consulted and managed (add/remove) in Preferences. Excluded domains are ignored by `resolveUrl()` and batch resolution functions.
 - [x] **URL Resolution (sidebar — specific cases)**: Fixed 3 bugs in the resolution pipeline: (1) Phantom tab is now briefly activated to allow JS redirect execution (Google News, etc.), (2) Facebook/Messenger URLs without redirect parameter are no longer sent to phantom tab (avoids 15s timeout on login pages), (3) Static Google News extraction expanded to `/rss/articles/`, `?url=` parameter, and consent redirect.
 - [x] **URL Resolution (sidebar)**: Fixed 3 issues that prevented complete resolution of all links: (1) concurrency guard with counter instead of boolean to support simultaneous resolutions, (2) silent failures now reported as errors instead of "no change", (3) automatic page title search after resolution via `fetchPageTitle()`.

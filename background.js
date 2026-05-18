@@ -64,8 +64,10 @@ async function ensureMigratedSettings() {
   let domains = settings.aggregatorDomains || [];
   let changed = false;
   
-  // Clean up pure redirectors from the list because they resolve much faster and robustly via HEAD request natively
-  const pureRedirects = ['t.co', 't.co/', 'bit.ly', 'bit.ly/', 'tinyurl.com', 'tinyurl.com/', 'lnkd.in', 'lnkd.in/', 'news.google.com', 'google.com/url'];
+	// Clean up pure redirectors from the list because they resolve much faster and robustly via HEAD request natively
+	// NOTE: news.google.com is NOT included here because Google News uses JavaScript redirects
+	// that require the Phantom Tab to resolve — HEAD/GET cannot follow JS redirects.
+	const pureRedirects = ['t.co', 't.co/', 'bit.ly', 'bit.ly/', 'tinyurl.com', 'tinyurl.com/', 'lnkd.in', 'lnkd.in/', 'google.com/url'];
   const oldLength = domains.length;
   domains = domains.filter(d => !pureRedirects.includes(d));
   if (domains.length !== oldLength) changed = true;
@@ -2148,6 +2150,24 @@ async function getBookmarkTreeForSidebar() {
     // Get folder timestamps
     const timestamps = (await browser.storage.local.get('folderTimestamps')).folderTimestamps || {};
 
+    // Build a URL→metadata lookup from IndexedDB for link status enrichment
+    const dbMetaMap = {};
+    try {
+      const db = await openDatabase();
+      const allRecords = await new Promise((resolve) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result || []);
+        request.onerror = () => resolve([]);
+      });
+      for (const rec of allRecords) {
+        dbMetaMap[rec.url] = { redirectResolved: !!rec.redirectResolved, originalUrl: rec.originalUrl || rec.url };
+      }
+    } catch (e) {
+      console.error('[LinkScout] Error building DB metadata map for sidebar:', e);
+    }
+
     // Build tree recursively
     async function buildTree(folderId) {
       const items = [];
@@ -2155,12 +2175,15 @@ async function getBookmarkTreeForSidebar() {
 
       for (const child of children) {
         if (child.url) {
+          const meta = dbMetaMap[child.url];
           items.push({
             id: child.id,
             title: child.title,
             url: child.url,
             type: 'bookmark',
-            dateAdded: child.dateAdded || 0
+            dateAdded: child.dateAdded || 0,
+            redirectResolved: meta ? meta.redirectResolved : false,
+            originalUrl: meta ? meta.originalUrl : child.url
           });
         } else {
           const subItems = await buildTree(child.id);
