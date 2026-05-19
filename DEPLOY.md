@@ -21,14 +21,18 @@ zip -r "LinkScout-$VERSION.zip" . -x "*.git*" "*.DS_Store*" "*.zip" "*.md" ".git
 ```
 
 ### 3. Commit and Push Changes
-After generating the package, record the new version in the Git history.
+After generating the package, record the new version in the Git history with a meaningful commit message that describes the changes made in this release.
 
 ```bash
 VERSION=$(grep '"version"' manifest.json | cut -d '"' -f 4)
+CHANGES=$(git diff --cached --stat | tail -1 | sed 's/^ *//')
 git add manifest.json
-git commit -m "Release v$VERSION"
+git commit -m "Release v$VERSION - $CHANGES"
 git push origin main
 ```
+
+> [!NOTE]
+> For a more descriptive message, replace `$CHANGES` with a manual summary of the changes (e.g. `Release v2.7.32 - Add time (HH:MM) to session folder name`).
 
 ---
 

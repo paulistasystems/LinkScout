@@ -26,7 +26,7 @@ This document details the planning for LinkScout's evolution, including new feat
 ## 🐛 Fixes and Continuous Maintenance
 
 ### 🐞 Critical Fixes
-*(none currently)*
+- Resolve URLs button not resolving duplicate links. When URL resolution generates a link that already exists in the folder, the link should be discarded instead of remaining unresolved.
 
 ### ⚙️ Improvements and Maintenance
 - [ ] Performance monitoring for collections with > 10,000 links.
