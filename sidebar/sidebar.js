@@ -68,9 +68,13 @@ let statusFilter = 'all'; // 'all', 'unresolved', 'error'
 
 // Known redirect/shortener domains that indicate an unresolved link
 const REDIRECT_DOMAINS = [
-    't.co', 'bit.ly', 'tinyurl.com', 'lnkd.in', 'ow.ly', 'is.gd',
-    'buff.ly', 'j.mp', 'dlvr.it', 'shorturl.at', 'rb.gy', 'cutt.ly',
-    'v.gd', 'rebrand.ly', 'smarturl.it', 'cli.re', 'soo.gd', 'lc.chat', 'sq.link'
+  't.co', 'bit.ly', 'tinyurl.com', 'lnkd.in', 'ow.ly', 'is.gd',
+  'buff.ly', 'j.mp', 'dlvr.it', 'shorturl.at', 'rb.gy', 'cutt.ly',
+  'v.gd', 'rebrand.ly', 'smarturl.it', 'cli.re', 'soo.gd', 'lc.chat', 'sq.link',
+  'bbc.in', 'mailchi.mp', 'eepurl.com', 'tinyletter.com',
+  'amzn.to', 'a.co', 'spoti.fi', 'apple.co',
+  'tcrn.ch', 'reut.rs', 'nyti.ms', 'wapo.st',
+  'on.wsj.com', 'bloom.bg', 'econ.st', 'gu.com', 'ind.pn'
 ];
 
 // Check if a bookmark is unresolved (still a redirect URL)

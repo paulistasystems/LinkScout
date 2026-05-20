@@ -305,6 +305,39 @@ async function removeLinkFromDatabase(url) {
   }
 }
 
+// Mark a link as verified (redirectResolved=true) in IndexedDB without changing URL
+// Used when resolveUrl confirms a URL is valid but no redirect was followed
+async function markLinkVerified(url) {
+  try {
+    const db = await openDatabase();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const index = store.index('url');
+      const getRequest = index.get(url);
+
+      getRequest.onsuccess = () => {
+        const record = getRequest.result;
+        if (record && !record.redirectResolved) {
+          const updatedRecord = {
+            ...record,
+            redirectResolved: true
+          };
+          const putRequest = store.put(updatedRecord);
+          putRequest.onsuccess = () => resolve(true);
+          putRequest.onerror = () => resolve(false);
+        } else {
+          resolve(false);
+        }
+      };
+      getRequest.onerror = () => resolve(false);
+    });
+  } catch (error) {
+    console.error('Error marking link as verified:', error);
+    return false;
+  }
+}
+
 // Update a link's URL in IndexedDB after resolution
 async function updateLinkUrlInDatabase(oldUrl, newUrl, newTitle) {
   try {
@@ -1123,35 +1156,37 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
 
 // Resolve URL by following redirects via HEAD request (with timeout)
 // Falls back to normalizeUrl if the request fails
-// IMPORTANT: This function MUST NEVER throw — always returns a URL (original if resolution fails)
+// Returns { url, verified } on success (verified=true means URL was confirmed reachable)
+// Returns null on hard failure (both HEAD and GET failed)
+// IMPORTANT: This function MUST NEVER throw
 async function resolveUrl(url, depth = 0) {
   try {
-  // Skip resolution for excluded domains
-  if (depth === 0) {
-    const { excludedDomains } = await browser.storage.sync.get({ excludedDomains: [] });
-    if (isDomainExcluded(url, excludedDomains)) {
-      console.log(`[LinkScout 🔍 Resolve] resolveUrl: ⏭️ Domínio excluído, pulando resolução para ${url}`);
-      return url;
+    // Skip resolution for excluded domains — return verified since domain is explicitly trusted
+    if (depth === 0) {
+      const { excludedDomains } = await browser.storage.sync.get({ excludedDomains: [] });
+      if (isDomainExcluded(url, excludedDomains)) {
+        console.log(`[LinkScout 🔍 Resolve] resolveUrl: ⏭️ Domínio excluído, pulando resolução para ${url}`);
+        return { url, verified: true };
+      }
     }
-  }
 
-  console.log(`[LinkScout 🔍 Resolve] resolveUrl: Iniciando (depth=${depth}) para ${url}`);
-  
-  if (depth > 10) {
-    console.warn(`[LinkScout 🔍 Resolve] resolveUrl: ⚠️ Limite de recursão alcançado para ${url}`);
-    return url;
-  }
-  
-  // Try static extraction first to bypass warning pages and save time (Facebook, Reddit, YT, Google tracking)
-  const extractResult = extractTargetFromRedirectUrl(url);
-  if (extractResult && extractResult !== url) {
-    console.log(`[LinkScout 🔍 Resolve] resolveUrl: ✅ Extração estática bem-sucedida: ${url} -> ${extractResult}`);
-    // Recurse to handle chained redirects!
-    return resolveUrl(extractResult, depth + 1);
-  } else if (extractResult === url) {
-    console.log(`[LinkScout 🔍 Resolve] resolveUrl: Extração estática retornou mesma URL, sem redirecionamento`);
-    return url;
-  }
+    console.log(`[LinkScout 🔍 Resolve] resolveUrl: Iniciando (depth=${depth}) para ${url}`);
+
+    if (depth > 10) {
+      console.warn(`[LinkScout 🔍 Resolve] resolveUrl: ⚠️ Limite de recursão alcançado para ${url}`);
+      return { url, verified: false };
+    }
+
+    // Try static extraction first to bypass warning pages and save time (Facebook, Reddit, YT, Google tracking)
+    const extractResult = extractTargetFromRedirectUrl(url);
+    if (extractResult && extractResult !== url) {
+      console.log(`[LinkScout 🔍 Resolve] resolveUrl: ✅ Extração estática bem-sucedida: ${url} -> ${extractResult}`);
+      // Recurse to handle chained redirects!
+      return resolveUrl(extractResult, depth + 1);
+    } else if (extractResult === url) {
+      console.log(`[LinkScout 🔍 Resolve] resolveUrl: Extração estática retornou mesma URL, sem redirecionamento`);
+      return { url, verified: true };
+    }
 
   const settings = await ensureMigratedSettings();
   const aggregatorDomains = settings.aggregatorDomains;
@@ -1188,94 +1223,97 @@ async function resolveUrl(url, depth = 0) {
     } catch (_) { return true; }
   })();
 
-  const isAggregator = matchesAggregatorDomain && looksLikeRedirector && !isHub;
+    const isAggregator = matchesAggregatorDomain && looksLikeRedirector && !isHub;
 
-  // Usar Aba Fantasma para links agregadores que podem rodar via Javascript ou bloquear HEAD
-  if (isAggregator) {
-    console.log(`[LinkScout 🔍 Resolve] resolveUrl: 🔮 Detectado agregador -> Acionando Phantom Tab para ${url}`);
-    const effectiveDomains = [...aggregatorDomains, 'news.google.com', 'google.com/url', 'facebook.com', 'messenger.com'];
-    return await resolveUrlWithPhantomTab(url, effectiveDomains);
-  }
-
-  console.log(`[LinkScout 🔍 Resolve] resolveUrl: 🌐 Iniciando requisição HEAD para ${url}`);
-  try {
-    let finalUrl = url;
-    let headFailed = false;
-    let headResponseOk = false;
-    
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => { controller.abort(); }, 5000);
-      const response = await fetch(url, { method: 'HEAD', redirect: 'follow', signal: controller.signal });
-      clearTimeout(timeoutId);
-      finalUrl = response.url;
-      headResponseOk = response.ok;
-    } catch (e) {
-      console.warn(`[LinkScout 🔍 Resolve] resolveUrl: ⚠️ HEAD falhou para ${url}:`, e.message);
-      headFailed = true;
+    // Usar Aba Fantasma para links agregadores que podem rodar via Javascript ou bloquear HEAD
+    if (isAggregator) {
+      console.log(`[LinkScout 🔍 Resolve] resolveUrl: 🔮 Detectado agregador -> Acionando Phantom Tab para ${url}`);
+      const effectiveDomains = [...aggregatorDomains, 'news.google.com', 'google.com/url', 'facebook.com', 'messenger.com'];
+      const phantomResult = await resolveUrlWithPhantomTab(url, effectiveDomains);
+      return { url: phantomResult, verified: phantomResult !== url };
     }
 
-    // Fallback: se HEAD falhou, retornou a mesma URL c/ erro nativo, ou for sabidamente um redirecionador HTML (t.co)
-    if (headFailed || (finalUrl === url && (!headResponseOk || url.includes('t.co/') || url.includes('bit.ly/')))) {
+    console.log(`[LinkScout 🔍 Resolve] resolveUrl: 🌐 Iniciando requisição HEAD para ${url}`);
+    try {
+      let finalUrl = url;
+      let headFailed = false;
+      let headResponseOk = false;
+
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => { controller.abort(); }, 5000);
+        const response = await fetch(url, { method: 'HEAD', redirect: 'follow', signal: controller.signal });
+        clearTimeout(timeoutId);
+        finalUrl = response.url;
+        headResponseOk = response.ok;
+      } catch (e) {
+        console.warn(`[LinkScout 🔍 Resolve] resolveUrl: ⚠️ HEAD falhou para ${url}:`, e.message);
+        headFailed = true;
+      }
+
+      // Fallback: se HEAD falhou, retornou a mesma URL c/ erro nativo, ou for sabidamente um redirecionador HTML (t.co)
+      if (headFailed || (finalUrl === url && (!headResponseOk || url.includes('t.co/') || url.includes('bit.ly/')))) {
         console.log(`[LinkScout 🔍 Resolve] resolveUrl: 🔄 Tentando GET fallback para ${url}...`);
         const getController = new AbortController();
         const getTimeout = setTimeout(() => { getController.abort(); }, 6000);
         let getFailed = false;
-        
+
         try {
-            const getResponse = await fetch(url, { method: 'GET', redirect: 'follow', signal: getController.signal });
-            finalUrl = getResponse.url;
-            
-            // Se a URL final ainda é igual, tenta ler o corpo para HTML redirect tags
-            if (finalUrl === url) {
-               const text = await getResponse.text();
-               
-               // Validação ultra restrita: apenas tag <meta http-equiv="refresh" ...>
-               const metaMatch = text.match(/<meta\s+[^>]*http-equiv=['"]?refresh['"]?[^>]*content=['"]?\d+;\s*url=['"]?(https?:\/\/[^'">\s]+)/i) 
-                              || text.match(/<meta\s+[^>]*content=['"]?\d+;\s*url=['"]?(https?:\/\/[^'">\s]+)[^>]*http-equiv=['"]?refresh['"]?/i);
-               if (metaMatch && metaMatch[1]) {
-                   finalUrl = metaMatch[1];
-               } else {
-                   // Validação restrita de JS comumente usado em anonimizadores puros
-                   if (text.includes("location.replace")) {
-                       const jsMatch = text.match(/location\.replace\(['"]((https?:\/\/[^'"]+))['"]\)/);
-                       if (jsMatch && jsMatch[1]) {
-                           finalUrl = jsMatch[1].replace(/\\\//g, '/');
-                       }
-                   }
-               }
+          const getResponse = await fetch(url, { method: 'GET', redirect: 'follow', signal: getController.signal });
+          finalUrl = getResponse.url;
+
+          // Se a URL final ainda é igual, tenta ler o corpo para HTML redirect tags
+          if (finalUrl === url) {
+            const text = await getResponse.text();
+
+            // Validação ultra restrita: apenas tag <meta http-equiv="refresh" ...>
+            const metaMatch = text.match(/<meta\s+[^>]*http-equiv=['"]?refresh['"]?[^>]*content=['"]?\d+;\s*url=['"]?(https?:\/\/[^'">\s]+)/i)
+              || text.match(/<meta\s+[^>]*content=['"]?\d+;\s*url=['"]?(https?:\/\/[^'">\s]+)[^>]*http-equiv=['"]?refresh['"]?/i);
+            if (metaMatch && metaMatch[1]) {
+              finalUrl = metaMatch[1];
+            } else {
+              // Validação restrita de JS comumente usado em anonimizadores puros
+              if (text.includes("location.replace")) {
+                const jsMatch = text.match(/location\.replace\(['"]((https?:\/\/[^'"]+))['"]\)/);
+                if (jsMatch && jsMatch[1]) {
+                  finalUrl = jsMatch[1].replace(/\\\//g, '/');
+                }
+              }
             }
+          }
         } catch (e) {
-            console.error(`[LinkScout 🔍 Resolve] resolveUrl: ❌ GET fallback falhou para ${url}:`, e.message);
-            getFailed = true;
+          console.error(`[LinkScout 🔍 Resolve] resolveUrl: ❌ GET fallback falhou para ${url}:`, e.message);
+          getFailed = true;
         } finally {
-            clearTimeout(getTimeout);
+          clearTimeout(getTimeout);
         }
 
         // Both HEAD and GET failed — this is a hard failure, return null
         if (headFailed && getFailed) {
-            console.error(`[LinkScout 🔍 Resolve] resolveUrl: 🛑 Falha total (HEAD+GET) para ${url}`);
-            return null;
+          console.error(`[LinkScout 🔍 Resolve] resolveUrl: 🛑 Falha total (HEAD+GET) para ${url}`);
+          return null;
         }
-    }
-
-    // Safety net: detect when resolution leads to a login/auth page and keep the original URL
-    try {
-      const resolvedObj = new URL(finalUrl);
-      const authPatterns = ['/login', '/signin', '/sign_in', '/auth/', '/consent', '/accounts/login'];
-      const isAuthPage = authPatterns.some(p => resolvedObj.pathname.toLowerCase().includes(p));
-      if (isAuthPage && finalUrl !== url) {
-        console.log(`[LinkScout 🔍 Resolve] resolveUrl: ⚠️ Resolução levou a página de autenticação (${finalUrl}), mantendo URL original`);
-        return normalizeUrl(url);
       }
-    } catch (_) {}
 
-    console.log(`[LinkScout 🔍 Resolve] resolveUrl: ✅ Sucesso. ${url} -> ${finalUrl}`);
-    return normalizeUrl(finalUrl);
-  } catch (error) {
-    console.error(`[LinkScout 🔍 Resolve] resolveUrl: ❌ Erro irreversível ao resolver ${url}:`, error.message);
-    return null;
-  }
+      // Safety net: detect when resolution leads to a login/auth page and keep the original URL
+      try {
+        const resolvedObj = new URL(finalUrl);
+        const authPatterns = ['/login', '/signin', '/sign_in', '/auth/', '/consent', '/accounts/login'];
+        const isAuthPage = authPatterns.some(p => resolvedObj.pathname.toLowerCase().includes(p));
+        if (isAuthPage && finalUrl !== url) {
+          console.log(`[LinkScout 🔍 Resolve] resolveUrl: ⚠️ Resolução levou a página de autenticação (${finalUrl}), mantendo URL original`);
+          return { url: normalizeUrl(url), verified: false };
+        }
+      } catch (_) {}
+
+      const normalizedUrl = normalizeUrl(finalUrl);
+      const verified = true; // If we reached here, at least one HTTP request succeeded
+      console.log(`[LinkScout 🔍 Resolve] resolveUrl: ✅ Sucesso. ${url} -> ${normalizedUrl} (verified: ${verified})`);
+      return { url: normalizedUrl, verified };
+    } catch (error) {
+      console.error(`[LinkScout 🔍 Resolve] resolveUrl: ❌ Erro irreversível ao resolver ${url}:`, error.message);
+      return null;
+    }
   } catch (outerError) {
     // Global safety net — resolveUrl must NEVER throw
     console.error(`[LinkScout 🔍 Resolve] resolveUrl: 🛑 Exceção global capturada para ${url}:`, outerError.message);
@@ -1323,16 +1361,23 @@ async function findExistingBookmark(parentId, url) {
 // Create or update bookmark, avoiding duplicates globally via IndexedDB
 // URLs are resolved (redirects followed) and normalized before duplicate check
 async function createOrUpdateBookmark(parentId, title, url, index = undefined, folderPath = '', skipResolve = false) {
-  const originalUrl = url;
-  // Resolve URL: follow redirects + normalize (remove tracking params, fragments)
-  let resolvedUrl;
-  if (skipResolve) {
-    resolvedUrl = normalizeUrl(url); // Fast path: tabs already have their final URLs
-  } else {
-    resolvedUrl = await resolveUrl(url);
-    // resolveUrl returns null on hard failure — fall back to normalized original URL
-    if (resolvedUrl === null) resolvedUrl = normalizeUrl(url);
-  }
+    const originalUrl = url;
+    // Resolve URL: follow redirects + normalize (remove tracking params, fragments)
+    let resolvedUrl;
+    let resolveVerified = false;
+    if (skipResolve) {
+      resolvedUrl = normalizeUrl(url); // Fast path: tabs already have their final URLs
+      resolveVerified = true;
+    } else {
+      const result = await resolveUrl(url);
+      // resolveUrl returns null on hard failure — fall back to normalized original URL
+      if (result === null) {
+        resolvedUrl = normalizeUrl(url);
+      } else {
+        resolvedUrl = result.url;
+        resolveVerified = result.verified;
+      }
+    }
 
   // Check global duplicate via IndexedDB (using resolved URL)
   const isGlobalDuplicate = await isLinkDuplicate(resolvedUrl);
@@ -1351,10 +1396,11 @@ async function createOrUpdateBookmark(parentId, title, url, index = undefined, f
   }
   const newBookmark = await browser.bookmarks.create(createOptions);
 
-  // Only mark as redirectResolved if the URL actually changed during resolution,
-  // or if we skipped resolution entirely (tabs already have final URLs).
-  // If resolveUrl returned the same URL (failed to resolve), let the background job retry.
-  const wasActuallyResolved = skipResolve || (resolvedUrl !== originalUrl);
+    // Mark as redirectResolved if:
+    // - skipResolve: tabs already have final URLs
+    // - URL changed during resolution: redirect was followed
+    // - resolveVerified: URL was confirmed valid (direct link, no redirect needed)
+    const wasActuallyResolved = skipResolve || (resolvedUrl !== originalUrl) || resolveVerified;
 
   // Add to IndexedDB for global duplicate tracking with full metadata
   await addLinkToDatabase(resolvedUrl, title, parentId, folderPath, originalUrl, wasActuallyResolved);
@@ -2273,39 +2319,45 @@ async function resolveFolderUrls(folderId) {
         const seenNormalizedUrls = new Set(allNodes.map(n => normalizeUrl(n.url)));
 
         for (let i = 0; i < allNodes.length; i++) {
-            const node = allNodes[i];
-            console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] Resolvendo: ${node.url}`);
-            try {
-                const resolvedUrl = await resolveUrl(node.url);
-                if (resolvedUrl === null) {
-                    errorCount++;
-                    console.error(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] ❌ Falha na resolução de ${node.url}`);
-                } else if (resolvedUrl !== node.url) {
-                    const normalizedResolved = normalizeUrl(resolvedUrl);
-                    if (seenNormalizedUrls.has(normalizedResolved)) {
-                        console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] 🗑️ Descartado (duplicata): ${node.url} -> ${resolvedUrl} já existe na pasta`);
-                        await browser.bookmarks.remove(node.id);
-                        await removeLinkFromDatabase(node.url);
-                        discardedCount++;
-                    } else {
-                        seenNormalizedUrls.add(normalizedResolved);
-                        let newTitle = (node.title && node.title !== node.url) ? node.title : resolvedUrl;
-                        try {
-                            const fetchedTitle = await fetchPageTitle(resolvedUrl);
-                            if (fetchedTitle) newTitle = fetchedTitle;
-                        } catch (_) { /* keep existing title */ }
-                        console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] ✅ Resolvido: ${node.url} -> ${resolvedUrl} (título: ${newTitle})`);
-                        await browser.bookmarks.update(node.id, {
-                            url: resolvedUrl,
-                            title: newTitle
-                        });
-                        await updateLinkUrlInDatabase(node.url, resolvedUrl, newTitle);
-                        resolvedCount++;
-                    }
-                } else {
-                    console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] ⏭️ Sem alteração: ${node.url}`);
-                    skippedCount++;
-                }
+        const node = allNodes[i];
+        console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] Resolvendo: ${node.url}`);
+        try {
+        const result = await resolveUrl(node.url);
+        if (result === null) {
+          errorCount++;
+          console.error(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] ❌ Falha na resolução de ${node.url}`);
+        } else {
+          const resolvedUrl = result.url;
+          if (resolvedUrl !== node.url) {
+            const normalizedResolved = normalizeUrl(resolvedUrl);
+            if (seenNormalizedUrls.has(normalizedResolved)) {
+              console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] 🗑️ Descartado (duplicata): ${node.url} -> ${resolvedUrl} já existe na pasta`);
+              await browser.bookmarks.remove(node.id);
+              await removeLinkFromDatabase(node.url);
+              discardedCount++;
+            } else {
+              seenNormalizedUrls.add(normalizedResolved);
+              let newTitle = (node.title && node.title !== node.url) ? node.title : resolvedUrl;
+              try {
+                const fetchedTitle = await fetchPageTitle(resolvedUrl);
+                if (fetchedTitle) newTitle = fetchedTitle;
+              } catch (_) { /* keep existing title */ }
+              console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] ✅ Resolvido: ${node.url} -> ${resolvedUrl} (título: ${newTitle})`);
+              await browser.bookmarks.update(node.id, {
+                url: resolvedUrl,
+                title: newTitle
+              });
+              await updateLinkUrlInDatabase(node.url, resolvedUrl, newTitle);
+              resolvedCount++;
+            }
+          } else {
+            console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] ⏭️ Sem alteração: ${node.url} (verified: ${result.verified})`);
+            if (result.verified) {
+              await markLinkVerified(node.url);
+            }
+            skippedCount++;
+          }
+        }
       } catch (e) {
         errorCount++;
         console.error(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] ❌ Falha ao resolver ${node.url}:`, e.message);
@@ -2357,38 +2409,44 @@ async function resolveMultipleUrls(bookmarkIds) {
                     continue;
                 }
 
-                const bookmark = bms[0];
-                console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] Resolvendo: ${bookmark.url}`);
-                const resolvedUrl = await resolveUrl(bookmark.url);
-                if (resolvedUrl === null) {
-                    errorCount++;
-                    console.error(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] ❌ Falha na resolução de ${bookmark.url}`);
-                } else if (resolvedUrl !== bookmark.url) {
-                    const normalizedResolved = normalizeUrl(resolvedUrl);
-                    if (seenNormalizedUrls.has(normalizedResolved)) {
-                        console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] 🗑️ Descartado (duplicata): ${bookmark.url} -> ${resolvedUrl} já existe na pasta`);
-                        await browser.bookmarks.remove(id);
-                        await removeLinkFromDatabase(bookmark.url);
-                        discardedCount++;
-                    } else {
-                        seenNormalizedUrls.add(normalizedResolved);
-                        let newTitle = (bookmark.title && bookmark.title !== bookmark.url) ? bookmark.title : resolvedUrl;
-                        try {
-                            const fetchedTitle = await fetchPageTitle(resolvedUrl);
-                            if (fetchedTitle) newTitle = fetchedTitle;
-                        } catch (_) { /* keep existing title */ }
-                        console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] ✅ Resolvido: ${bookmark.url} -> ${resolvedUrl} (título: ${newTitle})`);
-                        await browser.bookmarks.update(id, {
-                            url: resolvedUrl,
-                            title: newTitle
-                        });
-                        await updateLinkUrlInDatabase(bookmark.url, resolvedUrl, newTitle);
-                        resolvedCount++;
-                    }
-                } else {
-                    console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] ⏭️ Sem alteração: ${bookmark.url}`);
-                    skippedCount++;
-                }
+      const bookmark = bms[0];
+      console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] Resolvendo: ${bookmark.url}`);
+      const result = await resolveUrl(bookmark.url);
+      if (result === null) {
+        errorCount++;
+        console.error(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] ❌ Falha na resolução de ${bookmark.url}`);
+      } else {
+        const resolvedUrl = result.url;
+        if (resolvedUrl !== bookmark.url) {
+          const normalizedResolved = normalizeUrl(resolvedUrl);
+          if (seenNormalizedUrls.has(normalizedResolved)) {
+            console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] 🗑️ Descartado (duplicata): ${bookmark.url} -> ${resolvedUrl} já existe na pasta`);
+            await browser.bookmarks.remove(id);
+            await removeLinkFromDatabase(bookmark.url);
+            discardedCount++;
+          } else {
+            seenNormalizedUrls.add(normalizedResolved);
+            let newTitle = (bookmark.title && bookmark.title !== bookmark.url) ? bookmark.title : resolvedUrl;
+            try {
+              const fetchedTitle = await fetchPageTitle(resolvedUrl);
+              if (fetchedTitle) newTitle = fetchedTitle;
+            } catch (_) { /* keep existing title */ }
+            console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] ✅ Resolvido: ${bookmark.url} -> ${resolvedUrl} (título: ${newTitle})`);
+            await browser.bookmarks.update(id, {
+              url: resolvedUrl,
+              title: newTitle
+            });
+            await updateLinkUrlInDatabase(bookmark.url, resolvedUrl, newTitle);
+            resolvedCount++;
+          }
+        } else {
+          console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] ⏭️ Sem alteração: ${bookmark.url} (verified: ${result.verified})`);
+          if (result.verified) {
+            await markLinkVerified(bookmark.url);
+          }
+          skippedCount++;
+        }
+      }
             } catch (e) {
                 errorCount++;
                 console.error(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] ❌ Falha no bookmark ${id}:`, e.message);
