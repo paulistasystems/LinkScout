@@ -11,7 +11,14 @@ This document details the manual process for preparing and publishing a new vers
 ### 1. Increment the Version
 Edit the [manifest.json](manifest.json) file and update the `"version"` field following semantic versioning (Ex: `2.7.20` -> `2.7.21`).
 
-### 2. Generate the Extension Package
+### 2. Update the Roadmap
+Update the [ROADMAP.md](ROADMAP.md) file to reflect the changes made in this release:
+- Move completed features from **🛠️ Next Steps** or **🚀 Planned** sections to **✅ Recently Completed**.
+- Check off completed items with `[x]` and remove them from their original sections if applicable.
+- Add a summary of the changes made (bug fixes, new features, improvements).
+- Keep the **✅ Recently Completed** section organized with the latest version at the top.
+
+### 3. Generate the Extension Package
 Create a ZIP file containing only the files needed for the extension, naming it according to the version defined in the manifest.
 
 Run the following command in the terminal at the project root:
@@ -20,7 +27,7 @@ VERSION=$(grep '"version"' manifest.json | cut -d '"' -f 4)
 zip -r "LinkScout-$VERSION.zip" . -x "*.git*" "*.DS_Store*" "*.zip" "*.md" ".gitignore" "test.html" "deploy.sh"
 ```
 
-### 3. Commit and Push Changes
+### 4. Commit and Push Changes
 After generating the package, record the new version in the Git history with a meaningful commit message that describes the changes made in this release.
 
 ```bash
