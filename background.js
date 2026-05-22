@@ -435,60 +435,89 @@ async function syncDatabaseWithBookmarks() {
     let purgedClones = 0;
     const seenUrls = new Set();
     const liveBookmarkUrls = new Set();
+    const cloneIds = [];
 
     for (const bookmark of allBookmarks) {
       if (seenUrls.has(bookmark.url)) {
-        // It's a duplicate inside Firefox
-        try {
-          await browser.bookmarks.remove(bookmark.id);
-          purgedClones++;
-        } catch (e) {}
+        cloneIds.push(bookmark.id);
       } else {
         seenUrls.add(bookmark.url);
         liveBookmarkUrls.add(bookmark.url);
-        // Safely attempt to add to IndexedDB
-        const added = await addLinkToDatabase(bookmark.url, bookmark.title, bookmark.folderId, bookmark.folderPath);
-        if (added) {
-          synced++;
+      }
+    }
+
+    // Batch: remove Firefox clones
+    for (const id of cloneIds) {
+      try { await browser.bookmarks.remove(id); purgedClones++; } catch (e) {}
+    }
+
+    // Batch: load all existing IndexedDB records once
+    const db = await openDatabase();
+    const allRecords = await new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => resolve([]);
+    });
+
+    const existingUrlSet = new Set(allRecords.map(r => r.url));
+
+    // Batch: add missing bookmarks in a single readwrite transaction
+    const toAdd = [];
+    for (const bookmark of allBookmarks) {
+      if (seenUrls.has(bookmark.url) && !cloneIds.includes(bookmark.id)) {
+        if (!existingUrlSet.has(bookmark.url)) {
+          toAdd.push(bookmark);
         } else {
-          skipped++; // Already exists in IDB, but it's the primary one in Firefox
+          skipped++;
         }
       }
+    }
+    seenUrls.clear(); // free memory
+
+    if (toAdd.length > 0) {
+      await new Promise((resolve) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        let addedCount = 0;
+        for (const bookmark of toAdd) {
+          const record = {
+            id: generateId(),
+            url: bookmark.url,
+            originalUrl: bookmark.url,
+            title: bookmark.title,
+            folderId: bookmark.folderId,
+            folderPath: bookmark.folderPath,
+            createdAt: Date.now(),
+            order: 0,
+            redirectResolved: false
+          };
+          const addReq = store.add(record);
+          addReq.onsuccess = () => { addedCount++; };
+          addReq.onerror = () => {};
+        }
+        tx.oncomplete = () => { synced = addedCount; resolve(); };
+        tx.onerror = () => resolve();
+      });
     }
 
     // Reverse sync: purge IndexedDB records whose bookmarks were deleted via Firefox Sync
     let purgedOrphans = 0;
-    try {
-      const db = await openDatabase();
-      const allRecords = await new Promise((resolve) => {
-        const tx = db.transaction(STORE_NAME, 'readonly');
-        const store = tx.objectStore(STORE_NAME);
-        const request = store.getAll();
-        request.onsuccess = () => resolve(request.result || []);
-        request.onerror = () => resolve([]);
-      });
+    const orphansToDelete = allRecords.filter(rec =>
+      rec.folderPath && rec.folderPath.startsWith(rootFolderName) && !liveBookmarkUrls.has(rec.url)
+    );
 
-      for (const record of allRecords) {
-        // Only purge records that belong to our LinkScout folder tree
-        if (record.folderPath && record.folderPath.startsWith(rootFolderName)) {
-          if (!liveBookmarkUrls.has(record.url)) {
-            // This record's bookmark no longer exists in Firefox — likely deleted via Sync
-            try {
-              await new Promise((resolve) => {
-                const tx = db.transaction(STORE_NAME, 'readwrite');
-                const store = tx.objectStore(STORE_NAME);
-                store.delete(record.id);
-                tx.oncomplete = () => resolve();
-                tx.onerror = () => resolve();
-              });
-              purgedOrphans++;
-              console.log(`[LinkScout] Reverse sync: Purged orphan from IndexedDB: ${record.url}`);
-            } catch (e) {}
-          }
+    if (orphansToDelete.length > 0) {
+      await new Promise((resolve) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        for (const rec of orphansToDelete) {
+          store.delete(rec.id);
         }
-      }
-    } catch (e) {
-      console.error('[LinkScout] Reverse sync error:', e);
+        tx.oncomplete = () => { purgedOrphans = orphansToDelete.length; resolve(); };
+        tx.onerror = () => resolve();
+      });
     }
 
     console.log(`Sync complete: ${synced} added, ${skipped} already existed. Purged ${purgedClones} Firefox zombie clones, ${purgedOrphans} orphaned IndexedDB records.`);
@@ -499,7 +528,88 @@ async function syncDatabaseWithBookmarks() {
   }
 }
 
-// Remove all links that have a folderPath starting with the given prefix
+// Lightweight sync: only adds missing bookmarks from Firefox to IndexedDB.
+// Skips the expensive reverse-sync purge and deduplication — those run at startup only.
+async function syncDatabaseWithBookmarksLightweight() {
+  try {
+    const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
+    let parentId = settings.bookmarkLocation || 'toolbar_____';
+
+    try {
+      await browser.bookmarks.getChildren(parentId);
+    } catch (e) {
+      parentId = 'toolbar_____';
+    }
+
+    const children = await browser.bookmarks.getChildren(parentId);
+    const rootFolderName = settings.rootFolder || 'LinkScout';
+    const linkScoutFolder = children.find(child => child.title === rootFolderName && !child.url);
+
+    if (!linkScoutFolder) {
+      return { synced: 0, skipped: 0 };
+    }
+
+    const allBookmarks = await collectBookmarksFromFolder(linkScoutFolder.id, rootFolderName);
+    const seenUrls = new Set();
+
+    // Batch: load all existing URLs from IndexedDB once
+    const db = await openDatabase();
+    const existingUrls = await new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.getAll();
+      request.onsuccess = () => {
+        const urlSet = new Set();
+        for (const rec of (request.result || [])) urlSet.add(rec.url);
+        resolve(urlSet);
+      };
+      request.onerror = () => resolve(new Set());
+    });
+
+    // Batch: add missing bookmarks in a single readwrite transaction
+    const toAdd = [];
+    for (const bookmark of allBookmarks) {
+      if (seenUrls.has(bookmark.url)) continue;
+      seenUrls.add(bookmark.url);
+      if (!existingUrls.has(bookmark.url)) {
+        toAdd.push(bookmark);
+      }
+    }
+
+    let synced = 0;
+    if (toAdd.length > 0) {
+      await new Promise((resolve) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        for (const bookmark of toAdd) {
+          const record = {
+            id: generateId(),
+            url: bookmark.url,
+            originalUrl: bookmark.url,
+            title: bookmark.title,
+            folderId: bookmark.folderId,
+            folderPath: bookmark.folderPath,
+            createdAt: Date.now(),
+            order: 0,
+            redirectResolved: false
+          };
+          const addReq = store.add(record);
+          addReq.onsuccess = () => synced++;
+          addReq.onerror = () => {};
+        }
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      });
+    }
+
+    console.log(`[LinkScout] Lightweight sync: ${synced} added, ${allBookmarks.length - synced} already existed`);
+    return { synced, skipped: allBookmarks.length - synced };
+  } catch (error) {
+    console.error('Error in lightweight sync:', error);
+    return { synced: 0, skipped: 0, error: error.message };
+  }
+}
+
 async function removeLinksByFolderPathPrefix(folderPathPrefix) {
   try {
     const db = await openDatabase();
@@ -574,7 +684,6 @@ let syncTimeoutId = null;
 let resolvingUrlsCount = 0;
 
 function requestDatabaseSync() {
-  // Suppress sync during URL resolution to prevent race conditions with dedup
   if (resolvingUrlsCount > 0) {
     console.log('[LinkScout] Sync suprimido: resolução de URLs em andamento.');
     return;
@@ -583,7 +692,6 @@ function requestDatabaseSync() {
   syncTimeoutId = setTimeout(async () => {
     syncTimeoutId = null;
     await syncDatabaseWithBookmarks();
-    runBackgroundVerification();
   }, 2500);
 }
 
@@ -640,7 +748,6 @@ async function deduplicateExistingDatabase() {
   try {
     const db = await openDatabase();
 
-    // Get all records
     const allRecords = await new Promise((resolve) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const store = tx.objectStore(STORE_NAME);
@@ -656,7 +763,6 @@ async function deduplicateExistingDatabase() {
 
     console.log(`[LinkScout] Deduplication: Analyzing ${allRecords.length} records...`);
 
-    // Group records by normalized URL
     const groups = new Map();
     for (const record of allRecords) {
       const normalizedUrl = normalizeUrl(record.url);
@@ -666,87 +772,78 @@ async function deduplicateExistingDatabase() {
       groups.get(normalizedUrl).push(record);
     }
 
-    let removedCount = 0;
-    let updatedCount = 0;
     const duplicateGroups = [...groups.entries()].filter(([, g]) => g.length > 1);
 
     console.log(`[LinkScout] Found ${duplicateGroups.length} groups with duplicates`);
 
+    if (duplicateGroups.length === 0) {
+      return { removed: 0, updated: 0, total: allRecords.length };
+    }
+
+    // Collect all operations upfront, then execute in a single batch transaction
+    const idsToDelete = [];
+    const recordsToUpdate = [];
+
     for (const [normalizedUrl, records] of duplicateGroups) {
-      // Sort by createdAt ascending — keep the oldest
       records.sort((a, b) => a.createdAt - b.createdAt);
+      const keepRecord = records[0];
       const duplicates = records.slice(1);
 
-      // Remove duplicate records and their Firefox bookmarks
       for (const dup of duplicates) {
-        try {
-          // Remove from IndexedDB
-          await new Promise((resolve, reject) => {
-            const tx = db.transaction(STORE_NAME, 'readwrite');
-            const store = tx.objectStore(STORE_NAME);
-            const request = store.delete(dup.id);
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error);
-          });
-
-          // Remove corresponding Firefox bookmark (only within its stored folder)
-          if (dup.folderId) {
-            try {
-              const children = await browser.bookmarks.getChildren(dup.folderId);
-              const bookmark = children.find(c => c.url === dup.url);
-              if (bookmark) {
-                await browser.bookmarks.remove(bookmark.id);
-              }
-            } catch (e) {
-              // Folder might not exist anymore, skip
+        idsToDelete.push(dup.id);
+        // Also remove corresponding Firefox bookmark
+        if (dup.folderId) {
+          try {
+            const children = await browser.bookmarks.getChildren(dup.folderId);
+            const bookmark = children.find(c => c.url === dup.url);
+            if (bookmark) {
+              await browser.bookmarks.remove(bookmark.id);
             }
-          }
-
-          removedCount++;
-          console.log(`[LinkScout] Removed duplicate: ${dup.url}`);
-        } catch (e) {
-          console.error('[LinkScout] Error removing duplicate:', e);
+          } catch (e) {}
         }
-
-        // Small delay to avoid blocking the browser
-        await delay(10);
       }
 
-      // Update the kept record's URL to normalized version if it changed
-      const keepRecord = records[0];
       if (keepRecord.url !== normalizedUrl) {
         const newTitle = (keepRecord.title === keepRecord.url) ? normalizedUrl : keepRecord.title;
-        try {
-          await new Promise((resolve, reject) => {
-            const tx = db.transaction(STORE_NAME, 'readwrite');
-            const store = tx.objectStore(STORE_NAME);
-            const updatedRecord = {
-              ...keepRecord,
-              originalUrl: keepRecord.originalUrl || keepRecord.url,
-              url: normalizedUrl,
-              title: newTitle
-            };
-            store.put(updatedRecord);
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
-          });
+        recordsToUpdate.push({ ...keepRecord, originalUrl: keepRecord.originalUrl || keepRecord.url, url: normalizedUrl, title: newTitle });
+      }
+    }
 
-          // Also update the Firefox bookmark URL
-          if (keepRecord.folderId) {
-            try {
-              const children = await browser.bookmarks.getChildren(keepRecord.folderId);
-              const bookmark = children.find(c => c.url === keepRecord.url);
-              if (bookmark) {
-                await browser.bookmarks.update(bookmark.id, { url: normalizedUrl, title: newTitle });
-              }
-            } catch (e) {
-              // Folder might not exist, skip
+    // Batch: delete all duplicates and update changed URLs in a single transaction
+    let removedCount = 0;
+    let updatedCount = 0;
+
+    if (idsToDelete.length > 0 || recordsToUpdate.length > 0) {
+      await new Promise((resolve) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+
+        for (const id of idsToDelete) {
+          store.delete(id);
+        }
+
+        for (const rec of recordsToUpdate) {
+          store.put(rec);
+        }
+
+        tx.oncomplete = () => {
+          removedCount = idsToDelete.length;
+          updatedCount = recordsToUpdate.length;
+          resolve();
+        };
+        tx.onerror = () => resolve();
+      });
+
+      // Update Firefox bookmarks for changed URLs
+      for (const rec of recordsToUpdate) {
+        if (rec.folderId) {
+          try {
+            const children = await browser.bookmarks.getChildren(rec.folderId);
+            const bookmark = children.find(c => c.url === rec.originalUrl || c.url === rec.url);
+            if (bookmark) {
+              await browser.bookmarks.update(bookmark.id, { url: rec.url, title: rec.title });
             }
-          }
-
-          updatedCount++;
-        } catch (e) {
-          console.error('[LinkScout] Error updating record URL:', e);
+          } catch (e) {}
         }
       }
     }
@@ -2527,10 +2624,15 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
   }
 
   // Sidebar message handlers
-if (message.action === 'syncBookmarks') {
-  const syncResult = await syncDatabaseWithBookmarks();
-  return syncResult;
-}
+  if (message.action === 'syncBookmarks') {
+    const syncResult = await syncDatabaseWithBookmarks();
+    return syncResult;
+  }
+
+  if (message.action === 'syncBookmarksLightweight') {
+    const syncResult = await syncDatabaseWithBookmarksLightweight();
+    return syncResult;
+  }
 
 if (message.action === 'getBookmarkTree') {
   return await getBookmarkTreeForSidebar();

@@ -151,7 +151,7 @@ document.addEventListener('DOMContentLoaded', () => {
 async function loadBookmarks() {
   showLoading(true);
   try {
-    await browser.runtime.sendMessage({ action: 'syncBookmarks' });
+    await browser.runtime.sendMessage({ action: 'syncBookmarksLightweight' });
     const result = await browser.runtime.sendMessage({ action: 'getBookmarkTree' });
     if (result.error) {
       console.error('Error loading bookmarks:', result.error);
