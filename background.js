@@ -2527,9 +2527,14 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
   }
 
   // Sidebar message handlers
-  if (message.action === 'getBookmarkTree') {
-    return await getBookmarkTreeForSidebar();
-  }
+if (message.action === 'syncBookmarks') {
+  const syncResult = await syncDatabaseWithBookmarks();
+  return syncResult;
+}
+
+if (message.action === 'getBookmarkTree') {
+  return await getBookmarkTreeForSidebar();
+}
 
   if (message.action === 'openAndTrash') {
     return await openAndRemove(message.bookmarkId);

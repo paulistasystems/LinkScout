@@ -149,23 +149,24 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function loadBookmarks() {
-    showLoading(true);
-    try {
-        const result = await browser.runtime.sendMessage({ action: 'getBookmarkTree' });
-        if (result.error) {
-            console.error('Error loading bookmarks:', result.error);
-            showEmpty(true);
-            return;
-        }
-        linkscoutFolderId = result.linkscoutFolderId;
-        allBookmarksData = result.bookmarks;
-        linksPerFolder = result.linksPerFolder || 10;
-        renderBookmarkTree();
-    } catch (error) {
-        console.error('Error loading bookmarks:', error);
-        showEmpty(true);
+  showLoading(true);
+  try {
+    await browser.runtime.sendMessage({ action: 'syncBookmarks' });
+    const result = await browser.runtime.sendMessage({ action: 'getBookmarkTree' });
+    if (result.error) {
+      console.error('Error loading bookmarks:', result.error);
+      showEmpty(true);
+      return;
     }
-    showLoading(false);
+    linkscoutFolderId = result.linkscoutFolderId;
+    allBookmarksData = result.bookmarks;
+    linksPerFolder = result.linksPerFolder || 10;
+    renderBookmarkTree();
+  } catch (error) {
+    console.error('Error loading bookmarks:', error);
+    showEmpty(true);
+  }
+  showLoading(false);
 }
 
 let pendingReload = null;

@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "LinkScout",
-  "version": "2.7.35",
+  "version": "2.7.36",
   "description": "Saves links from selected text as bookmarks with smart organization.",
   "browser_specific_settings": {
     "gecko": {
