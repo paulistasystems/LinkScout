@@ -2409,31 +2409,61 @@ async function resolveFolderUrls(folderId) {
       return { success: true, resolved: 0, total: 0 };
     }
 
-        let resolvedCount = 0;
-        let errorCount = 0;
-        let skippedCount = 0;
-        let discardedCount = 0;
-        const seenNormalizedUrls = new Set(allNodes.map(n => normalizeUrl(n.url)));
+  let resolvedCount = 0;
+  let errorCount = 0;
+  let skippedCount = 0;
+  let discardedCount = 0;
+  const seenNormalizedUrls = new Set();
+  const normalizedToOriginals = new Map();
+  for (const n of allNodes) {
+    const norm = normalizeUrl(n.url);
+    seenNormalizedUrls.add(norm);
+    if (!normalizedToOriginals.has(norm)) normalizedToOriginals.set(norm, []);
+    normalizedToOriginals.get(norm).push(normalizeUrl(n.url));
+  }
 
-        for (let i = 0; i < allNodes.length; i++) {
-        const node = allNodes[i];
-        console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] Resolvendo: ${node.url}`);
-        try {
-        const result = await resolveUrl(node.url);
-        if (result === null) {
-          errorCount++;
-          console.error(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] ❌ Falha na resolução de ${node.url}`);
-        } else {
-          const resolvedUrl = result.url;
-          if (resolvedUrl !== node.url) {
-            const normalizedResolved = normalizeUrl(resolvedUrl);
-            if (seenNormalizedUrls.has(normalizedResolved)) {
-              console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] 🗑️ Descartado (duplicata): ${node.url} -> ${resolvedUrl} já existe na pasta`);
-              await browser.bookmarks.remove(node.id);
-              await removeLinkFromDatabase(node.url);
-              discardedCount++;
-            } else {
-              seenNormalizedUrls.add(normalizedResolved);
+  for (let i = 0; i < allNodes.length; i++) {
+    const node = allNodes[i];
+    console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] Resolvendo: ${node.url}`);
+    try {
+      const result = await resolveUrl(node.url);
+      if (result === null) {
+        errorCount++;
+        console.error(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] ❌ Falha na resolução de ${node.url}`);
+      } else {
+        const resolvedUrl = result.url;
+        if (resolvedUrl !== node.url) {
+          const normalizedOriginal = normalizeUrl(node.url);
+          const normalizedResolved = normalizeUrl(resolvedUrl);
+          const isDuplicate = (() => {
+            if (!seenNormalizedUrls.has(normalizedResolved)) return false;
+            const originals = normalizedToOriginals.get(normalizedResolved);
+            if (originals && originals.includes(normalizedOriginal) && originals.length === 1) return false;
+            return true;
+          })();
+          if (isDuplicate) {
+            console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] 🗑️ Descartado (duplicata): ${node.url} -> ${resolvedUrl} já existe na pasta`);
+            await browser.bookmarks.remove(node.id);
+            await removeLinkFromDatabase(node.url);
+            seenNormalizedUrls.delete(normalizedOriginal);
+            const origs = normalizedToOriginals.get(normalizedOriginal);
+            if (origs) {
+              const idx = origs.indexOf(normalizedOriginal);
+              if (idx !== -1) origs.splice(idx, 1);
+              if (origs.length === 0) normalizedToOriginals.delete(normalizedOriginal);
+            }
+            discardedCount++;
+          } else {
+            seenNormalizedUrls.delete(normalizedOriginal);
+            seenNormalizedUrls.add(normalizedResolved);
+            const origs = normalizedToOriginals.get(normalizedOriginal);
+            if (origs) {
+              const idx = origs.indexOf(normalizedOriginal);
+              if (idx !== -1) origs.splice(idx, 1);
+              if (origs.length === 0) normalizedToOriginals.delete(normalizedOriginal);
+            }
+            if (!normalizedToOriginals.has(normalizedResolved)) normalizedToOriginals.set(normalizedResolved, []);
+            normalizedToOriginals.get(normalizedResolved).push(normalizedResolved);
               let newTitle = (node.title && node.title !== node.url) ? node.title : resolvedUrl;
               try {
                 const fetchedTitle = await fetchPageTitle(resolvedUrl);
@@ -2481,30 +2511,34 @@ async function resolveMultipleUrls(bookmarkIds) {
   console.log(`[LinkScout 🔍 Resolve] ===== INÍCIO: Resolução múltipla (${bookmarkIds.length} IDs) =====`);
   resolvingUrlsCount++;
   try {
-        let resolvedCount = 0;
-        let errorCount = 0;
-        let skippedCount = 0;
-        let discardedCount = 0;
+  let resolvedCount = 0;
+  let errorCount = 0;
+  let skippedCount = 0;
+  let discardedCount = 0;
 
-        const seenNormalizedUrls = new Set();
-        for (const id of bookmarkIds) {
-            try {
-                const bms = await browser.bookmarks.get(id);
-                if (bms && bms.length > 0 && bms[0].url) {
-                    seenNormalizedUrls.add(normalizeUrl(bms[0].url));
-                }
-            } catch (_) {}
-        }
+  const seenNormalizedUrls = new Set();
+  const normalizedToOriginals = new Map();
+  for (const id of bookmarkIds) {
+    try {
+      const bms = await browser.bookmarks.get(id);
+      if (bms && bms.length > 0 && bms[0].url) {
+        const norm = normalizeUrl(bms[0].url);
+        seenNormalizedUrls.add(norm);
+        if (!normalizedToOriginals.has(norm)) normalizedToOriginals.set(norm, []);
+        normalizedToOriginals.get(norm).push(norm);
+      }
+    } catch (_) {}
+  }
 
-        for (let i = 0; i < bookmarkIds.length; i++) {
-            const id = bookmarkIds[i];
-            try {
-                const bms = await browser.bookmarks.get(id);
-                if (!bms || bms.length === 0 || !bms[0].url) {
-                    console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] ⏭️ Bookmark ${id} não encontrado ou sem URL`);
-                    skippedCount++;
-                    continue;
-                }
+  for (let i = 0; i < bookmarkIds.length; i++) {
+    const id = bookmarkIds[i];
+    try {
+      const bms = await browser.bookmarks.get(id);
+      if (!bms || bms.length === 0 || !bms[0].url) {
+        console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] ⏭️ Bookmark ${id} não encontrado ou sem URL`);
+        skippedCount++;
+        continue;
+      }
 
       const bookmark = bms[0];
       console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] Resolvendo: ${bookmark.url}`);
@@ -2515,14 +2549,37 @@ async function resolveMultipleUrls(bookmarkIds) {
       } else {
         const resolvedUrl = result.url;
         if (resolvedUrl !== bookmark.url) {
+          const normalizedOriginal = normalizeUrl(bookmark.url);
           const normalizedResolved = normalizeUrl(resolvedUrl);
-          if (seenNormalizedUrls.has(normalizedResolved)) {
+          const isDuplicate = (() => {
+            if (!seenNormalizedUrls.has(normalizedResolved)) return false;
+            const originals = normalizedToOriginals.get(normalizedResolved);
+            if (originals && originals.includes(normalizedOriginal) && originals.length === 1) return false;
+            return true;
+          })();
+          if (isDuplicate) {
             console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] 🗑️ Descartado (duplicata): ${bookmark.url} -> ${resolvedUrl} já existe na pasta`);
             await browser.bookmarks.remove(id);
             await removeLinkFromDatabase(bookmark.url);
+            seenNormalizedUrls.delete(normalizedOriginal);
+            const origs = normalizedToOriginals.get(normalizedOriginal);
+            if (origs) {
+              const idx = origs.indexOf(normalizedOriginal);
+              if (idx !== -1) origs.splice(idx, 1);
+              if (origs.length === 0) normalizedToOriginals.delete(normalizedOriginal);
+            }
             discardedCount++;
           } else {
+            seenNormalizedUrls.delete(normalizedOriginal);
             seenNormalizedUrls.add(normalizedResolved);
+            const origs = normalizedToOriginals.get(normalizedOriginal);
+            if (origs) {
+              const idx = origs.indexOf(normalizedOriginal);
+              if (idx !== -1) origs.splice(idx, 1);
+              if (origs.length === 0) normalizedToOriginals.delete(normalizedOriginal);
+            }
+            if (!normalizedToOriginals.has(normalizedResolved)) normalizedToOriginals.set(normalizedResolved, []);
+            normalizedToOriginals.get(normalizedResolved).push(normalizedResolved);
             let newTitle = (bookmark.title && bookmark.title !== bookmark.url) ? bookmark.title : resolvedUrl;
             try {
               const fetchedTitle = await fetchPageTitle(resolvedUrl);
