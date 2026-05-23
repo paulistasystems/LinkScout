@@ -341,13 +341,13 @@ async function updateLinkUrlInDatabase(oldUrl, newUrl, newTitle) {
       const index = store.index('url');
       const getOldRequest = index.get(oldUrl);
 
-      getOldRequest.onsuccess = () => {
+      getOldRequest.onsuccess = async () => {
         const oldRecord = getOldRequest.result;
         if (!oldRecord) { resolve(false); return; }
 
         const getNewRequest = index.get(newUrl);
 
-        getNewRequest.onsuccess = () => {
+        getNewRequest.onsuccess = async () => {
           const existingNew = getNewRequest.result;
 
         store.delete(oldRecord.id);
