@@ -1217,38 +1217,37 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
       }
     }
 
-function tabUpdateListener(updatedTabId, changeInfo, updatedTab) {
-	if (updatedTabId === tabId || childTabIds.includes(updatedTabId)) {
-		const currentUrl = changeInfo.url || updatedTab.url;
-		if (!currentUrl || currentUrl === url || currentUrl === 'about:blank') return;
+	function tabUpdateListener(updatedTabId, changeInfo, updatedTab) {
+		if (updatedTabId === tabId || childTabIds.includes(updatedTabId)) {
+			const currentUrl = changeInfo.url || updatedTab.url;
+			if (!currentUrl || currentUrl === url || currentUrl === 'about:blank') return;
 
-		const isStillAggregator = aggregatorDomains.some(domain => {
-			try {
-				const u = new URL(currentUrl);
-				return (u.hostname + u.pathname).includes(domain);
-			} catch (e) {
-				return currentUrl.includes(domain);
-			}
-		});
-
-		if (!isStillAggregator) {
-			console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Detectou redirecionamento externo na aba ${updatedTabId}: ${currentUrl}`);
-			cleanup(currentUrl);
-		} else {
-			const extracted = extractTargetFromRedirectUrl(currentUrl);
-			if (extracted && extracted !== currentUrl) {
-				const extractedStillAggregator = aggregatorDomains.some(domain => {
-					try {
-						const u = new URL(extracted);
-						return (u.hostname + u.pathname).includes(domain);
-					} catch (e) {
-						return extracted.includes(domain);
-					}
-				});
-				if (!extractedStillAggregator) {
-					console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Extração estática de URL intermediária ${currentUrl} -> ${extracted}`);
-					cleanup(extracted);
+			const isStillAggregator = aggregatorDomains.some(domain => {
+				try {
+					const u = new URL(currentUrl);
+					return (u.hostname + u.pathname).includes(domain);
+				} catch (e) {
+					return currentUrl.includes(domain);
 				}
+			});
+
+			if (!isStillAggregator) {
+				console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Detectou redirecionamento externo na aba ${updatedTabId}: ${currentUrl}`);
+				cleanup(currentUrl);
+			} else {
+				const extracted = extractTargetFromRedirectUrl(currentUrl);
+				if (extracted && extracted !== currentUrl) {
+					const extractedStillAggregator = aggregatorDomains.some(domain => {
+						try {
+							const u = new URL(extracted);
+							return (u.hostname + u.pathname).includes(domain);
+						} catch (e) {
+							return extracted.includes(domain);
+						}
+					});
+					if (!extractedStillAggregator) {
+						console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Extração estática de URL intermediária ${currentUrl} -> ${extracted}`);
+						cleanup(extracted);
 					}
 				}
 			}
@@ -1283,13 +1282,9 @@ function tabUpdateListener(updatedTabId, changeInfo, updatedTab) {
           }, true);
         `,
         runAt: "document_start"
-      }).catch(() => {});
-      
-      browser.tabs.onCreated.addListener(tabCreatedListener);
-      browser.tabs.onUpdated.addListener(tabUpdateListener);
+	}).catch(() => {});
 
-      // Timeout de 15 segundos para evitar phantom tabs acumuladas
-      fallbackTimeout = setTimeout(() => {
+	fallbackTimeout = setTimeout(() => {
         if (resolved) return;
         console.warn(`[LinkScout 🔍 Resolve] Phantom Tab: ⏱️ Timeout alcançado (15s) para ${url}. Fechando todas as abas vinculadas.`);
         browser.tabs.get(tabId).then(t => {
