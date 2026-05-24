@@ -1217,47 +1217,62 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
       }
     }
 
-    function tabUpdateListener(updatedTabId, changeInfo, updatedTab) {
-      // Analisar tanto a aba raiz quanto as suas crias diretas
-      if (updatedTabId === tabId || childTabIds.includes(updatedTabId)) {
-        // Se a URL mudou e já não é mais um link agregador (escapou do redirecionador)
-        if (updatedTab.url && updatedTab.url !== url && updatedTab.url !== 'about:blank') {
-           const isStillAggregator = aggregatorDomains.some(domain => {
-             try {
-               const u = new URL(updatedTab.url);
-               return (u.hostname + u.pathname).includes(domain);
-             } catch (e) {
-               return updatedTab.url.includes(domain);
-             }
-           });
-           
-           if (!isStillAggregator) {
-             console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Detectou redirecionamento externo na aba ${updatedTabId}: ${updatedTab.url}`);
-             cleanup(updatedTab.url);
-           }
-        }
-      }
-    }
+function tabUpdateListener(updatedTabId, changeInfo, updatedTab) {
+	if (updatedTabId === tabId || childTabIds.includes(updatedTabId)) {
+		const currentUrl = changeInfo.url || updatedTab.url;
+		if (!currentUrl || currentUrl === url || currentUrl === 'about:blank') return;
 
-    try {
-      // Store the currently active tab so we can restore focus after phantom tab loads
-      const [previousActiveTab] = await browser.tabs.query({ active: true, currentWindow: true });
-      
-      // Create tab active initially to allow JS redirects to execute
-      const tab = await browser.tabs.create({ url: url, active: true });
-      tabId = tab.id;
-      
-      // Restore focus to previous tab after a short delay to let page JS fire
-      setTimeout(async () => {
-        try {
-          if (previousActiveTab && previousActiveTab.id) {
-            await browser.tabs.update(previousActiveTab.id, { active: true });
-          }
-        } catch (_) {}
-      }, 500);
-      
-      // Inject shielding to force redirect in same window (prevents orphan tabs with noopener)
-      browser.tabs.executeScript(tabId, {
+		const isStillAggregator = aggregatorDomains.some(domain => {
+			try {
+				const u = new URL(currentUrl);
+				return (u.hostname + u.pathname).includes(domain);
+			} catch (e) {
+				return currentUrl.includes(domain);
+			}
+		});
+
+		if (!isStillAggregator) {
+			console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Detectou redirecionamento externo na aba ${updatedTabId}: ${currentUrl}`);
+			cleanup(currentUrl);
+		} else {
+			const extracted = extractTargetFromRedirectUrl(currentUrl);
+			if (extracted && extracted !== currentUrl) {
+				const extractedStillAggregator = aggregatorDomains.some(domain => {
+					try {
+						const u = new URL(extracted);
+						return (u.hostname + u.pathname).includes(domain);
+					} catch (e) {
+						return extracted.includes(domain);
+					}
+				});
+				if (!extractedStillAggregator) {
+					console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Extração estática de URL intermediária ${currentUrl} -> ${extracted}`);
+					cleanup(extracted);
+				}
+					}
+				}
+			}
+		}
+	}
+
+	try {
+		const [previousActiveTab] = await browser.tabs.query({ active: true, currentWindow: true });
+
+		browser.tabs.onCreated.addListener(tabCreatedListener);
+		browser.tabs.onUpdated.addListener(tabUpdateListener);
+
+		const tab = await browser.tabs.create({ url: url, active: true });
+		tabId = tab.id;
+
+		setTimeout(async () => {
+			try {
+				if (previousActiveTab && previousActiveTab.id) {
+					await browser.tabs.update(previousActiveTab.id, { active: true });
+				}
+			} catch (_) {}
+		}, 500);
+
+		browser.tabs.executeScript(tabId, {
         code: `
           const s = document.createElement('script');
           s.textContent = "window.open = function(u){ window.location.href = u; return window; };";
@@ -2492,12 +2507,12 @@ async function resolveFolderUrls(folderId) {
           console.error(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] ❌ Falha na resolução de ${node.url}`);
         } else {
           const resolvedUrl = result.url;
-          if (resolvedUrl !== node.url) {
-            let newTitle = (node.title && node.title !== node.url) ? node.title : resolvedUrl;
-            try {
-              const fetchedTitle = await fetchPageTitle(resolvedUrl);
-              if (fetchedTitle) newTitle = fetchedTitle;
-            } catch (_) { }
+		if (resolvedUrl !== node.url) {
+				let newTitle = resolvedUrl;
+				try {
+					const fetchedTitle = await fetchPageTitle(resolvedUrl);
+					if (fetchedTitle) newTitle = fetchedTitle;
+				} catch (_) { }
             console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] ✅ Resolvido: ${node.url} -> ${resolvedUrl} (título: ${newTitle})`);
             await browser.bookmarks.update(node.id, {
               url: resolvedUrl,
@@ -2563,12 +2578,12 @@ async function resolveMultipleUrls(bookmarkIds) {
           console.error(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] ❌ Falha na resolução de ${bookmark.url}`);
         } else {
           const resolvedUrl = result.url;
-          if (resolvedUrl !== bookmark.url) {
-            let newTitle = (bookmark.title && bookmark.title !== bookmark.url) ? bookmark.title : resolvedUrl;
-            try {
-              const fetchedTitle = await fetchPageTitle(resolvedUrl);
-              if (fetchedTitle) newTitle = fetchedTitle;
-            } catch (_) { }
+		if (resolvedUrl !== bookmark.url) {
+				let newTitle = resolvedUrl;
+				try {
+					const fetchedTitle = await fetchPageTitle(resolvedUrl);
+					if (fetchedTitle) newTitle = fetchedTitle;
+				} catch (_) { }
             console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] ✅ Resolvido: ${bookmark.url} -> ${resolvedUrl} (título: ${newTitle})`);
             await browser.bookmarks.update(id, {
               url: resolvedUrl,
