@@ -2508,19 +2508,29 @@ async function resolveFolderUrls(folderId) {
 					const fetchedTitle = await fetchPageTitle(resolvedUrl);
 					if (fetchedTitle) newTitle = fetchedTitle;
 				} catch (_) { }
-            console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] ✅ Resolvido: ${node.url} -> ${resolvedUrl} (título: ${newTitle})`);
-            await browser.bookmarks.update(node.id, {
-              url: resolvedUrl,
-              title: newTitle
-            });
-            await updateLinkUrlInDatabase(node.url, resolvedUrl, newTitle);
-            resolvedCount++;
-          } else {
-            console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] ⏭️ Sem alteração: ${node.url} (verified: ${result.verified})`);
-            if (result.verified) {
-              await markLinkVerified(node.url);
-            }
-            skippedCount++;
+				console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] ✅ Resolvido: ${node.url} -> ${resolvedUrl} (título: ${newTitle})`);
+				await browser.bookmarks.update(node.id, {
+					url: resolvedUrl,
+					title: newTitle
+				});
+				await updateLinkUrlInDatabase(node.url, resolvedUrl, newTitle);
+				resolvedCount++;
+			} else {
+				if (!node.title || node.title === node.url || node.title === resolvedUrl) {
+					try {
+						const fetchedTitle = await fetchPageTitle(resolvedUrl);
+						if (fetchedTitle && fetchedTitle !== node.title) {
+							await browser.bookmarks.update(node.id, { title: fetchedTitle });
+							await updateLinkUrlInDatabase(node.url, resolvedUrl, fetchedTitle);
+							console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] 📝 Título atualizado: ${resolvedUrl} -> ${fetchedTitle}`);
+						}
+					} catch (_) { }
+				}
+				console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] ⏭️ Sem alteração: ${node.url} (verified: ${result.verified})`);
+				if (result.verified) {
+					await markLinkVerified(node.url);
+				}
+				skippedCount++;
           }
         }
       } catch (e) {
@@ -2579,19 +2589,29 @@ async function resolveMultipleUrls(bookmarkIds) {
 					const fetchedTitle = await fetchPageTitle(resolvedUrl);
 					if (fetchedTitle) newTitle = fetchedTitle;
 				} catch (_) { }
-            console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] ✅ Resolvido: ${bookmark.url} -> ${resolvedUrl} (título: ${newTitle})`);
-            await browser.bookmarks.update(id, {
-              url: resolvedUrl,
-              title: newTitle
-            });
-            await updateLinkUrlInDatabase(bookmark.url, resolvedUrl, newTitle);
-            resolvedCount++;
-          } else {
-            console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] ⏭️ Sem alteração: ${bookmark.url} (verified: ${result.verified})`);
-            if (result.verified) {
-              await markLinkVerified(bookmark.url);
-            }
-            skippedCount++;
+				console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] ✅ Resolvido: ${bookmark.url} -> ${resolvedUrl} (título: ${newTitle})`);
+				await browser.bookmarks.update(id, {
+					url: resolvedUrl,
+					title: newTitle
+				});
+				await updateLinkUrlInDatabase(bookmark.url, resolvedUrl, newTitle);
+				resolvedCount++;
+			} else {
+				if (!bookmark.title || bookmark.title === bookmark.url || bookmark.title === resolvedUrl) {
+					try {
+						const fetchedTitle = await fetchPageTitle(resolvedUrl);
+						if (fetchedTitle && fetchedTitle !== bookmark.title) {
+							await browser.bookmarks.update(id, { title: fetchedTitle });
+							await updateLinkUrlInDatabase(bookmark.url, resolvedUrl, fetchedTitle);
+							console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] 📝 Título atualizado: ${resolvedUrl} -> ${fetchedTitle}`);
+						}
+					} catch (_) { }
+				}
+				console.log(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] ⏭️ Sem alteração: ${bookmark.url} (verified: ${result.verified})`);
+				if (result.verified) {
+					await markLinkVerified(bookmark.url);
+				}
+				skippedCount++;
           }
         }
       } catch (e) {
