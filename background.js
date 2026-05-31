@@ -764,6 +764,11 @@ function requestDatabaseSync() {
   }, 2500);
 }
 
+async function forceDatabaseSync() {
+  if (syncTimeoutId) { clearTimeout(syncTimeoutId); syncTimeoutId = null; }
+  await syncDatabaseWithBookmarks();
+}
+
 // Listen for bookmark deletions and remove from IndexedDB
 browser.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
   const node = removeInfo.node;
@@ -1191,23 +1196,21 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
     console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Iniciando para ${url}`);
     console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Domínios agregadores ativos: ${aggregatorDomains.join(', ')}`);
 
-    function cleanup(finalUrl) {
-      if (resolved) return;
-      resolved = true;
-      clearTimeout(fallbackTimeout);
-      browser.tabs.onUpdated.removeListener(tabUpdateListener);
-      browser.tabs.onCreated.removeListener(tabCreatedListener);
-      
-      if (tabId !== null) {
-        browser.tabs.remove(tabId).catch(() => {});
+      async function cleanup(finalUrl) {
+            if (resolved) return;
+            resolved = true;
+            clearTimeout(fallbackTimeout);
+            browser.tabs.onUpdated.removeListener(tabUpdateListener);
+            browser.tabs.onCreated.removeListener(tabCreatedListener);
+
+        const tabsToRemove = [tabId, ...childTabIds].filter(id => id !== null);
+        if (tabsToRemove.length > 0) {
+            await browser.tabs.remove(tabsToRemove).catch(() => {});
+        }
+
+        console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Resolvido final -> ${finalUrl}`);
+        resolve(normalizeUrl(finalUrl));
       }
-      for (const cId of childTabIds) {
-        browser.tabs.remove(cId).catch(() => {});
-      }
-      
-      console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Resolvido final -> ${finalUrl}`);
-      resolve(normalizeUrl(finalUrl));
-    }
 
     function tabCreatedListener(tab) {
       // Rastrear abas filhas e netas geradas pela aba rastreadora original
@@ -1260,16 +1263,8 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
 		browser.tabs.onCreated.addListener(tabCreatedListener);
 		browser.tabs.onUpdated.addListener(tabUpdateListener);
 
-		const tab = await browser.tabs.create({ url: url, active: true });
-		tabId = tab.id;
-
-		setTimeout(async () => {
-			try {
-				if (previousActiveTab && previousActiveTab.id) {
-					await browser.tabs.update(previousActiveTab.id, { active: true });
-				}
-			} catch (_) {}
-		}, 500);
+      const tab = await browser.tabs.create({ url: url, active: false });
+      tabId = tab.id;
 
 		browser.tabs.executeScript(tabId, {
         code: `
@@ -1284,48 +1279,45 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
         runAt: "document_start"
 	}).catch(() => {});
 
-	fallbackTimeout = setTimeout(() => {
-        if (resolved) return;
-        console.warn(`[LinkScout 🔍 Resolve] Phantom Tab: ⏱️ Timeout alcançado (15s) para ${url}. Fechando todas as abas vinculadas.`);
-        browser.tabs.get(tabId).then(t => {
-          if (t.url) {
-            // Fallback: try static extraction from the tab's current URL
-            const extracted = extractTargetFromRedirectUrl(t.url);
-            if (extracted && extracted !== t.url) {
-              console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Extração estática no timeout: ${t.url} -> ${extracted}`);
-              return cleanup(extracted);
-            }
-            // Fallback: se travou no redirecionador nativo do google, extrair param
-            if (t.url.includes('google.com/url')) {
-              try {
-                let u = new URL(t.url);
-                let q = u.searchParams.get('q') || u.searchParams.get('url');
-                if (q) {
-                  console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Extração manual segura via parametro q para ${t.url}`);
-                  return cleanup(q);
+      fallbackTimeout = setTimeout(() => {
+            if (resolved) return;
+            console.warn(`[LinkScout 🔍 Resolve] Phantom Tab: ⏱️ Timeout alcançado (15s) para ${url}. Fechando todas as abas vinculadas.`);
+            browser.tabs.get(tabId).then(async t => {
+                if (t.url) {
+                    const extracted = extractTargetFromRedirectUrl(t.url);
+                    if (extracted && extracted !== t.url) {
+                        console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Extração estática no timeout: ${t.url} -> ${extracted}`);
+                        return await cleanup(extracted);
+                    }
+                    if (t.url.includes('google.com/url')) {
+                        try {
+                            let u = new URL(t.url);
+                            let q = u.searchParams.get('q') || u.searchParams.get('url');
+                            if (q) {
+                                console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Extração manual segura via parametro q para ${t.url}`);
+                                return await cleanup(q);
+                            }
+                        } catch(e) {}
+                    }
+                    if (t.url.includes('consent.google')) {
+                        try {
+                            let u = new URL(t.url);
+                            let cont = u.searchParams.get('continue');
+                            if (cont) {
+                                console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Extração de consent redirect para ${t.url}`);
+                                return await cleanup(decodeURIComponent(cont));
+                            }
+                        } catch(e) {}
+                    }
                 }
-              } catch(e) {}
-            }
-            // Fallback: Google consent redirect
-            if (t.url.includes('consent.google')) {
-              try {
-                let u = new URL(t.url);
-                let cont = u.searchParams.get('continue');
-                if (cont) {
-                  console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Extração de consent redirect para ${t.url}`);
-                  return cleanup(decodeURIComponent(cont));
-                }
-              } catch(e) {}
-            }
-          }
-          cleanup(t.url || url);
-        }).catch(() => {
-          cleanup(url);
-        });
-      }, 15000);
+                await cleanup(t.url || url);
+            }).catch(async () => {
+                await cleanup(url);
+            });
+        }, 15000);
     } catch (e) {
-      console.error("[LinkScout 🔍 Resolve] Phantom Tab: ❌ Erro crítico ao criar aba raiz:", e);
-      cleanup(url);
+        console.error("[LinkScout 🔍 Resolve] Phantom Tab: ❌ Erro crítico ao criar aba raiz:", e);
+        await cleanup(url);
     }
   });
 }
@@ -2538,7 +2530,11 @@ async function resolveFolderUrls(folderId) {
         console.error(`[LinkScout 🔍 Resolve] [${i + 1}/${allNodes.length}] ❌ Falha ao resolver ${node.url}:`, e.message);
       }
       if (i < allNodes.length - 1) await delay(200);
-    }
+            if ((i + 1) % 5 === 0 && i < allNodes.length - 1) {
+                console.log(`[LinkScout 🔍 Resolve] Sync intermediário após ${i + 1} bookmarks...`);
+                await forceDatabaseSync();
+            }
+        }
 
     console.log(`[LinkScout 🔍 Resolve] Resolução concluída, executando dedup no banco...`);
     const dedupResult = await deduplicateResolvedLinks();
@@ -2619,15 +2615,19 @@ async function resolveMultipleUrls(bookmarkIds) {
         console.error(`[LinkScout 🔍 Resolve] [${i + 1}/${bookmarkIds.length}] ❌ Falha no bookmark ${id}:`, e.message);
       }
       if (i < bookmarkIds.length - 1) await delay(200);
-    }
+      if ((i + 1) % 5 === 0 && i < bookmarkIds.length - 1) {
+                console.log(`[LinkScout 🔍 Resolve] Sync intermediário após ${i + 1} bookmarks...`);
+                await forceDatabaseSync();
+            }
+        }
 
-    console.log(`[LinkScout 🔍 Resolve] Resolução concluída, executando dedup no banco...`);
-    const dedupResult = await deduplicateResolvedLinks();
-    console.log(`[LinkScout 🔍 Resolve] Dedup removeu ${dedupResult.removed} duplicatas do banco`);
+        console.log(`[LinkScout 🔍 Resolve] Resolução concluída, executando dedup no banco...`);
+        const dedupResult = await deduplicateResolvedLinks();
+        console.log(`[LinkScout 🔍 Resolve] Dedup removeu ${dedupResult.removed} duplicatas do banco`);
 
-    console.log(`[LinkScout 🔍 Resolve] ===== FIM: ${resolvedCount} resolvidos, ${dedupResult.removed} descartados (duplicatas), ${skippedCount} sem alteração, ${errorCount} erros de ${bookmarkIds.length} total =====`);
-    return { success: true, resolved: resolvedCount, discarded: dedupResult.removed, total: bookmarkIds.length, errors: errorCount };
-  } catch (error) {
+        console.log(`[LinkScout 🔍 Resolve] ===== FIM: ${resolvedCount} resolvidos, ${dedupResult.removed} descartados (duplicatas), ${skippedCount} sem alteração, ${errorCount} erros de ${bookmarkIds.length} total =====`);
+        return { success: true, resolved: resolvedCount, discarded: dedupResult.removed, total: bookmarkIds.length, errors: errorCount };
+    } catch (error) {
     console.error('[LinkScout 🔍 Resolve] ❌ Erro crítico na resolução múltipla:', error);
     return { success: false, error: error.message };
   } finally {

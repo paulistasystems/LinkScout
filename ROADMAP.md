@@ -13,11 +13,6 @@ This document details the planning for LinkScout's evolution, including new feat
 
 ## 🚀 Planned (Medium Term)
 
-### 🌍 Internationalization (i18n)
-- [x] Multi-language support for extension UI.
-- [x] Localization of sidebar, options page, and context menus.
-- [x] Support for multiple languages (PT-BR, EN, and others).
-
 ### 🖱️ Drag & Drop in Sidebar
 - [ ] Manual reorganization of links between folders via drag and drop.
 - [ ] Move entire folders to new hierarchical levels.
@@ -33,6 +28,7 @@ This document details the planning for LinkScout's evolution, including new feat
 ### 🐞 Critical Fixes
 - [x] ~~Sidebar "Resolve URLs" button fails to resolve Google News links.~~
 - [ ] Save links from selection not saving with title when URL is resolved.
+- [x] ~~Only the first bookmark from the folder are being resolved.~~
 
 ### ⚙️ Improvements and Maintenance
 - [ ] Performance monitoring for collections with > 10,000 links.
@@ -41,7 +37,8 @@ This document details the planning for LinkScout's evolution, including new feat
 ---
 
 ## ✅ Recently Completed
-- [x] **Internationalization (i18n) (v2.7.44)**: Added multi-language support using the WebExtensions i18n API. Created `_locales/en/` and `_locales/pt_BR/` message catalogs with 55 translated strings. Updated manifest.json with `__MSG_` placeholders and `default_locale`. Localized sidebar, options page, context menus, and all dynamic UI strings via `browser.i18n.getMessage()`. Fixed mixed Portuguese/English strings throughout the UI. Adding more languages requires only a new `_locales/<locale>/messages.json` file.
+- [x] **Folder URL Resolution — only first bookmark resolved (v2.7.45)**: Fixed bug where resolving a folder would only process the first bookmark. Root cause: `resolveUrlWithPhantomTab` created tabs as `active: true`, stealing focus and causing browser throttling of subsequent tabs; `cleanup()` was fire-and-forget so previous phantom tabs could still exist when the next one was created, causing tab event listener interference. Fix: (1) phantom tabs now created with `active: false` to avoid stealing focus and prevent browser throttling, (2) `cleanup()` is now `async` and awaits `browser.tabs.remove()` to ensure the phantom tab is fully closed before the next resolution starts, (3) added `forceDatabaseSync()` for intermediate DB sync every 5 bookmarks during folder resolution, preventing data loss if the process is interrupted.
+- [x] **Internationalization (i18n) (v2.7.44)**: Added multi-language support using the WebExtensions i18n API. Created `_locales/en/` and `_locales/pt_BR/` message catalogs with 55 translated strings. Updated manifest.json with `__MSG_` placeholders and `default_locale`. Localized sidebar, options page, context menus, and all dynamic UI strings via `browser.i18n.getMessage()`. Fixed mixed Portuguese/English strings throughout the UI. Adding more languages requires only a new `_locales/<locale>/messages.json` file. ✅ Multi-language support for extension UI. ✅ Localization of sidebar, options page, and context menus. ✅ Support for multiple languages (PT-BR, EN, and others).
 - [x] **Google News URL Resolution (Phantom Tab intermediate redirect fix, v2.7.41)**: Fixed bug where the sidebar "Resolve URLs" button failed to resolve Google News links. Root cause: the Phantom Tab's `tabUpdateListener` classified intermediate Google redirect pages (e.g. `google.com/url?q=target`, `consent.google.com?continue=target`) as "still aggregator", so resolution never completed. Fix: (1) added static URL extraction (`extractTargetFromRedirectUrl`) on intermediate aggregator pages to pull the target URL from query parameters, (2) registered `tabs.onUpdated`/`tabs.onCreated` listeners *before* tab creation to prevent race condition, (3) used `changeInfo.url` for earlier URL change detection.
 - [x] **Resolved bookmark title defaults to page title (v2.7.41)**: Changed `resolveFolderUrls` and `resolveMultipleUrls` so that when a URL is resolved, the bookmark label is always set to the fetched page title (via `fetchPageTitle`). Falls back to the resolved URL only if the page has no `<title>` tag. Previously, the old bookmark title was preserved if it differed from the URL, which kept stale/redirector titles.
 - [x] **Batch URL Resolution (DB-level dedup)**: Fixed bug where only the first batch of 10 links in a folder was resolved; subsequent batches' bookmarks remained at their original URLs. Root cause: duplicate tracking was done in-memory with stale data and `updateLinkUrlInDatabase` silently failed when the resolved URL already existed in the DB (unique constraint violation on `url` index). Fix: removed all in-memory duplicate tracking from `resolveFolderUrls` and `resolveMultipleUrls`; dedup is now enforced entirely by the IndexedDB unique `url` index. `updateLinkUrlInDatabase` now checks if the target URL already has a record — if so, deletes the old record and its Firefox bookmark, then updates the existing target record. Added `deduplicateResolvedLinks()` post-resolution pass to clean up any remaining duplicates in DB + Firefox bookmarks. DB schema bumped to v3 (clean rebuild on upgrade).
