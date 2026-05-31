@@ -2775,25 +2775,25 @@ async function createContextMenus() {
   // Create menu items directly
   browser.contextMenus.create({
     id: "linkscout-save-links",
-    title: "🔗 LinkScout: Salvar Links da Seleção",
+    title: browser.i18n.getMessage("contextMenuSaveLinks"),
     contexts: ["selection"]
   });
 
   browser.contextMenus.create({
     id: "linkscout-save-single-link",
-    title: "🔗 LinkScout: Salvar Este Link",
+    title: browser.i18n.getMessage("contextMenuSaveLink"),
     contexts: ["link"]
   });
 
   browser.contextMenus.create({
     id: "linkscout-save-all-tabs",
-    title: "🔗 LinkScout: Salvar e Fechar Todas as Abas",
+    title: browser.i18n.getMessage("contextMenuSaveAllTabs"),
     contexts: ["page"]
   });
 
   browser.contextMenus.create({
     id: "linkscout-save-all-tabs-tab",
-    title: "🔗 LinkScout: Salvar e Fechar Todas as Abas",
+    title: browser.i18n.getMessage("contextMenuSaveAllTabs"),
     contexts: ["tab"]
   });
 }

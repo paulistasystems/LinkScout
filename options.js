@@ -20,7 +20,7 @@ async function loadSettings() {
         console.log('Settings loaded:', settings);
     } catch (error) {
         console.error('Error loading settings:', error);
-        showStatus('Error loading settings', 'error');
+        showStatus(browser.i18n.getMessage('optionsErrorLoadingSettings'), 'error');
     }
 }
 
@@ -44,27 +44,27 @@ async function saveSettings() {
 
         // If linksPerFolder changed, reorganize existing folders
         if (linksPerFolderChanged) {
-            showStatus('⏳ Reorganizing folders...', 'success');
+            showStatus(browser.i18n.getMessage('optionsReorganizingFolders'), 'success');
             try {
                 const result = await browser.runtime.sendMessage({
                     action: 'reorganizeFolders',
                     settings: newSettings
                 });
                 if (result && result.success) {
-                    showStatus(`✓ Settings saved! ${result.reorganizedCount || 0} folders reorganized.`, 'success');
+                    showStatus(browser.i18n.getMessage('optionsSettingsSavedReorganized', [result.reorganizedCount || 0]), 'success');
                 } else {
-                    showStatus('✓ Settings saved!', 'success');
+                    showStatus(browser.i18n.getMessage('optionsSettingsSaved'), 'success');
                 }
             } catch (reorgError) {
                 console.error('Error reorganizing folders:', reorgError);
-                showStatus('✓ Settings saved (reorganization failed)', 'success');
+                showStatus(browser.i18n.getMessage('optionsSettingsSavedReorgFailed'), 'success');
             }
         } else {
-            showStatus('✓ Settings saved successfully!', 'success');
+            showStatus(browser.i18n.getMessage('optionsSettingsSavedSuccess'), 'success');
         }
     } catch (error) {
         console.error('Error saving settings:', error);
-        showStatus('✗ Error saving settings', 'error');
+        showStatus(browser.i18n.getMessage('optionsErrorSavingSettings'), 'error');
     }
 }
 
@@ -82,7 +82,8 @@ function showStatus(message, type) {
 
 // Event listeners
 document.addEventListener('DOMContentLoaded', () => {
-    loadSettings();
+  applyI18n();
+  loadSettings();
     loadShortcutDisplay();
     loadExcludedDomains();
 });
@@ -99,7 +100,7 @@ async function loadShortcutDisplay() {
         if (sidebarCmd && sidebarCmd.shortcut) {
             shortcutEl.textContent = sidebarCmd.shortcut;
         } else {
-            shortcutEl.textContent = 'Not set';
+            shortcutEl.textContent = browser.i18n.getMessage('optionsShortcutNotSet');
             shortcutEl.style.color = '#999';
         }
     } catch (e) {
@@ -162,7 +163,7 @@ function renderExcludedDomains() {
 
         const removeBtn = document.createElement('button');
         removeBtn.className = 'remove-domain-btn';
-        removeBtn.textContent = '🗑️ Remove';
+        removeBtn.textContent = browser.i18n.getMessage('optionsRemoveButton');
         removeBtn.addEventListener('click', () => removeExcludedDomain(domain));
         item.appendChild(removeBtn);
 
@@ -181,11 +182,11 @@ async function addExcludedDomain() {
             excludedDomainsCache = result.domains;
             renderExcludedDomains();
             input.value = '';
-            showStatus(`✓ "${domain}" added to exclusion list`, 'success');
+            showStatus(browser.i18n.getMessage('optionsDomainAdded', [domain]), 'success');
         }
     } catch (error) {
         console.error('Error adding excluded domain:', error);
-        showStatus('✗ Error adding domain', 'error');
+        showStatus(browser.i18n.getMessage('optionsErrorAddingDomain'), 'error');
     }
 }
 
@@ -195,11 +196,11 @@ async function removeExcludedDomain(domain) {
         if (result && result.success) {
             excludedDomainsCache = result.domains;
             renderExcludedDomains();
-            showStatus(`✓ "${domain}" removed from exclusion list`, 'success');
+            showStatus(browser.i18n.getMessage('optionsDomainRemoved', [domain]), 'success');
         }
     } catch (error) {
         console.error('Error removing excluded domain:', error);
-        showStatus('✗ Error removing domain', 'error');
+        showStatus(browser.i18n.getMessage('optionsErrorRemovingDomain'), 'error');
     }
 }
 

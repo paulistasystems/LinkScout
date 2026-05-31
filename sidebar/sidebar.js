@@ -101,7 +101,8 @@ function getBookmarkStatus(bookmark) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    bookmarkTreeEl = document.getElementById('bookmarkTree');
+  applyI18n();
+  bookmarkTreeEl = document.getElementById('bookmarkTree');
     loadingStateEl = document.getElementById('loadingState');
     emptyStateEl = document.getElementById('emptyState');
     refreshBtn = document.getElementById('refreshBtn');
@@ -341,10 +342,11 @@ function createFolderElement(folder) {
     const nameSpan = document.createElement('span'); nameSpan.className = 'folder-name'; nameSpan.textContent = folder.title; headerEl.appendChild(nameSpan);
     const countSpan = document.createElement('span'); countSpan.className = 'folder-count'; countSpan.textContent = bookmarkCount; headerEl.appendChild(countSpan);
     const actionsDiv = document.createElement('div'); actionsDiv.className = 'folder-actions';
-    const shuffleBtn = document.createElement('button'); shuffleBtn.className = 'folder-action-btn shuffle-btn'; shuffleBtn.title = 'Shuffle bookmarks'; shuffleBtn.textContent = '🔀'; actionsDiv.appendChild(shuffleBtn);
-    const resolveBtn = document.createElement('button'); resolveBtn.className = 'folder-action-btn resolve-btn'; resolveBtn.title = 'Resolve URLs'; resolveBtn.textContent = '🔍'; actionsDiv.appendChild(resolveBtn);
-    const openAllBtn = document.createElement('button'); openAllBtn.className = 'folder-action-btn open-all-btn'; openAllBtn.title = 'Open all in tabs'; openAllBtn.textContent = '🚀 Open all'; actionsDiv.appendChild(openAllBtn);
-    const deleteBtn = document.createElement('button'); deleteBtn.className = 'folder-action-btn delete-folder-btn'; deleteBtn.title = 'Excluir pasta'; deleteBtn.textContent = '🗑️'; actionsDiv.appendChild(deleteBtn);
+    const shuffleBtn = document.createElement('button'); shuffleBtn.className = 'folder-action-btn shuffle-btn';   shuffleBtn.title = browser.i18n.getMessage('sidebarShuffleBookmarks'); shuffleBtn.textContent = '🔀'; actionsDiv.appendChild(shuffleBtn);
+    const resolveBtn = document.createElement('button'); resolveBtn.className = 'folder-action-btn resolve-btn';   resolveBtn.title = browser.i18n.getMessage('sidebarResolveUrls'); resolveBtn.textContent = '🔍'; actionsDiv.appendChild(resolveBtn);
+    const openAllBtn = document.createElement('button'); openAllBtn.className = 'folder-action-btn open-all-btn';   openAllBtn.title = browser.i18n.getMessage('sidebarOpenAllInTabs');
+  openAllBtn.textContent = browser.i18n.getMessage('sidebarOpenAll'); actionsDiv.appendChild(openAllBtn);
+    const deleteBtn = document.createElement('button'); deleteBtn.className = 'folder-action-btn delete-folder-btn';   deleteBtn.title = browser.i18n.getMessage('sidebarDeleteFolder'); deleteBtn.textContent = '🗑️'; actionsDiv.appendChild(deleteBtn);
     headerEl.appendChild(actionsDiv);
     if (isVirtualFolder) {
         shuffleBtn.addEventListener('click', (e) => { e.stopPropagation(); shuffleVirtualFolder(folderEl); });
@@ -393,7 +395,7 @@ function createBookmarkElement(bookmark) {
 
     const titleSpan = document.createElement('span'); titleSpan.className = 'bookmark-title'; titleSpan.title = bookmark.url; titleSpan.textContent = bookmark.title || bookmark.url; itemEl.appendChild(titleSpan);
 
-    const excludeBtn = document.createElement('button'); excludeBtn.className = 'bookmark-exclude-btn'; excludeBtn.title = 'Exclude this domain from resolution'; excludeBtn.textContent = '🚫';
+    const excludeBtn = document.createElement('button'); excludeBtn.className = 'bookmark-exclude-btn';   excludeBtn.title = browser.i18n.getMessage('sidebarExcludeDomain'); excludeBtn.textContent = '🚫';
     excludeBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
         try {
@@ -493,8 +495,8 @@ async function resolveVirtualFolder(folder) {
 function showResolveResult(folderEl, result) {
     const header = folderEl.querySelector('.folder-header'); if (!header) return;
     const badge = document.createElement('span'); badge.className = 'resolve-result-badge';
-    if (result.resolved > 0) { badge.textContent = `✅ ${result.resolved} resolvido(s)`; badge.classList.add('success'); }
-    else { badge.textContent = '✅ Tudo atualizado'; badge.classList.add('neutral'); }
+  if (result.resolved > 0) { badge.textContent = browser.i18n.getMessage('sidebarResolvedCount', [result.resolved]); badge.classList.add('success'); }
+  else { badge.textContent = browser.i18n.getMessage('sidebarAllUpToDate'); badge.classList.add('neutral'); }
     header.appendChild(badge);
     setTimeout(() => { badge.classList.add('fade-out'); setTimeout(() => badge.remove(), 500); }, 3000);
 }
@@ -530,13 +532,13 @@ function handleSearch(e) { searchQuery = e.target.value.toLowerCase().trim(); re
 
 function toggleSortOrder() { currentSortOrder = currentSortOrder === 'desc' ? 'asc' : 'desc'; updateSortIcon(); renderBookmarkTree(); }
 
-function updateSortIcon() { sortBtn.textContent = currentSortOrder === 'desc' ? '⬇️' : '⬆️'; sortBtn.title = currentSortOrder === 'desc' ? 'Sort: Newest First' : 'Sort: Oldest First'; }
+function updateSortIcon() { sortBtn.textContent = currentSortOrder === 'desc' ? '⬇️' : '⬆️';   sortBtn.title = currentSortOrder === 'desc' ? browser.i18n.getMessage('sidebarSortNewestFirst') : browser.i18n.getMessage('sidebarSortOldestFirst'); }
 
 // Update filter button appearance based on current selection
 function updateFilterButton() {
-    if (statusFilter === 'all') { filterStatusBtn.textContent = '⚡'; filterStatusBtn.classList.remove('active'); filterStatusBtn.title = 'Filter by status'; }
-    else if (statusFilter === 'unresolved') { filterStatusBtn.textContent = '⚠️'; filterStatusBtn.classList.add('active'); filterStatusBtn.title = 'Showing: Unresolved only'; }
-    else if (statusFilter === 'error') { filterStatusBtn.textContent = '❌'; filterStatusBtn.classList.add('active'); filterStatusBtn.title = 'Showing: Error only'; }
+  if (statusFilter === 'all') { filterStatusBtn.textContent = '⚡'; filterStatusBtn.classList.remove('active'); filterStatusBtn.title = browser.i18n.getMessage('sidebarFilterByStatus'); }
+  else if (statusFilter === 'unresolved') { filterStatusBtn.textContent = '⚠️'; filterStatusBtn.classList.add('active'); filterStatusBtn.title = browser.i18n.getMessage('sidebarShowingUnresolved'); }
+  else if (statusFilter === 'error') { filterStatusBtn.textContent = '❌'; filterStatusBtn.classList.add('active'); filterStatusBtn.title = browser.i18n.getMessage('sidebarShowingError'); }
     filterStatusDropdown.querySelectorAll('.filter-option').forEach(opt => { opt.classList.toggle('selected', opt.dataset.filter === statusFilter); });
 }
 
@@ -580,7 +582,7 @@ function filterByStatus(nodes, filter) {
 
 function showExcludeToast(domain) {
     const existing = document.querySelector('.exclude-toast'); if (existing) existing.remove();
-    const toast = document.createElement('div'); toast.className = 'exclude-toast'; toast.textContent = `🚫 ${domain} excluded from resolution`;
+    const toast = document.createElement('div'); toast.className = 'exclude-toast';   toast.textContent = browser.i18n.getMessage('sidebarDomainExcluded', [domain]);
     document.body.appendChild(toast);
     requestAnimationFrame(() => toast.classList.add('visible'));
     setTimeout(() => { toast.classList.remove('visible'); setTimeout(() => toast.remove(), 300); }, 2000);

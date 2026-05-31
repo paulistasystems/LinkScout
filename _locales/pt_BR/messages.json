@@ -1,0 +1,236 @@
+{
+  "extensionName": {
+    "message": "LinkScout"
+  },
+  "extensionDescription": {
+    "message": "Salva links do texto selecionado como favoritos com organização inteligente."
+  },
+  "sidebarTitle": {
+    "message": "LinkScout - Favoritos"
+  },
+  "toggleSidebarShortcut": {
+    "message": "Ativar/desativar barra lateral do LinkScout"
+  },
+  "browserActionTooltip": {
+    "message": "LinkScout - Clique com o botão direito no texto selecionado para salvar links"
+  },
+  "contextMenuSaveLinks": {
+    "message": "🔗 LinkScout: Salvar Links da Seleção"
+  },
+  "contextMenuSaveLink": {
+    "message": "🔗 LinkScout: Salvar Este Link"
+  },
+  "contextMenuSaveAllTabs": {
+    "message": "🔗 LinkScout: Salvar e Fechar Todas as Abas"
+  },
+  "sidebarSearchPlaceholder": {
+    "message": "Buscar..."
+  },
+  "sidebarSearchTitle": {
+    "message": "Buscar favoritos"
+  },
+  "sidebarFilterByStatus": {
+    "message": "Filtrar por status"
+  },
+  "sidebarFilterAll": {
+    "message": "⚡ Todos os links"
+  },
+  "sidebarFilterUnresolved": {
+    "message": "⚠️ Não resolvidos"
+  },
+  "sidebarFilterError": {
+    "message": "❌ Erro"
+  },
+  "sidebarGroupByDomain": {
+    "message": "Agrupar por domínio"
+  },
+  "sidebarSortOrder": {
+    "message": "Ordem de classificação"
+  },
+  "sidebarCollapseAll": {
+    "message": "Recolher tudo"
+  },
+  "sidebarExpandAll": {
+    "message": "Expandir tudo"
+  },
+  "sidebarRefresh": {
+    "message": "Atualizar"
+  },
+  "sidebarLoadingBookmarks": {
+    "message": "Carregando favoritos..."
+  },
+  "sidebarNoBookmarks": {
+    "message": "📭 Nenhum favorito salvo ainda."
+  },
+  "sidebarShuffleBookmarks": {
+    "message": "Embaralhar favoritos"
+  },
+  "sidebarResolveUrls": {
+    "message": "Resolver URLs"
+  },
+  "sidebarOpenAll": {
+    "message": "🚀 Abrir todos"
+  },
+  "sidebarOpenAllInTabs": {
+    "message": "Abrir todos em abas"
+  },
+  "sidebarDeleteFolder": {
+    "message": "Excluir pasta"
+  },
+  "sidebarExcludeDomain": {
+    "message": "Excluir este domínio da resolução"
+  },
+  "sidebarResolvedCount": {
+    "message": "✅ $count$ resolvido(s)",
+    "placeholders": {
+      "count": { "content": "$1", "example": "5" }
+    }
+  },
+  "sidebarAllUpToDate": {
+    "message": "✅ Tudo atualizado"
+  },
+  "sidebarSortNewestFirst": {
+    "message": "Classificação: Mais recentes primeiro"
+  },
+  "sidebarSortOldestFirst": {
+    "message": "Classificação: Mais antigos primeiro"
+  },
+  "sidebarShowingUnresolved": {
+    "message": "Mostrando: Apenas não resolvidos"
+  },
+  "sidebarShowingError": {
+    "message": "Mostrando: Apenas com erro"
+  },
+  "sidebarDomainExcluded": {
+    "message": "🚫 $domain$ excluído da resolução",
+    "placeholders": {
+      "domain": { "content": "$1", "example": "exemplo.com" }
+    }
+  },
+  "optionsPageTitle": {
+    "message": "LinkScout - Configurações"
+  },
+  "optionsSubtitle": {
+    "message": "Configure como seus links são organizados e salvos"
+  },
+  "optionsOrganization": {
+    "message": "📁 Organização"
+  },
+  "optionsWhereToSave": {
+    "message": "Onde Salvar Favoritos"
+  },
+  "optionsBookmarksToolbar": {
+    "message": "Barra de Favoritos"
+  },
+  "optionsBookmarksMenu": {
+    "message": "Menu de Favoritos"
+  },
+  "optionsOtherBookmarks": {
+    "message": "Outros Favoritos"
+  },
+  "optionsLocationHint": {
+    "message": "Escolha o local principal onde a pasta raiz será criada"
+  },
+  "optionsRootFolder": {
+    "message": "Pasta Raiz de Favoritos"
+  },
+  "optionsRootFolderPlaceholder": {
+    "message": "LinkScout"
+  },
+  "optionsRootFolderHint": {
+    "message": "Nome da pasta principal onde os favoritos serão organizados"
+  },
+  "optionsFeatures": {
+    "message": "⚙️ Recursos"
+  },
+  "optionsLinksPerFolder": {
+    "message": "Links por Pasta"
+  },
+  "optionsLinksPerFolderHint": {
+    "message": "Quando houver mais links que este limite, subpastas numeradas serão criadas (ex.: 1-10, 11-20)"
+  },
+  "optionsExcludedDomains": {
+    "message": "🚫 Domínios Excluídos"
+  },
+  "optionsExcludedDomainsDesc": {
+    "message": "Domínios nesta lista serão ignorados durante a resolução automática de URLs."
+  },
+  "optionsExcludeDomainPlaceholder": {
+    "message": "ex. exemplo.com"
+  },
+  "optionsAddButton": {
+    "message": "+ Adicionar"
+  },
+  "optionsNoDomainsExcluded": {
+    "message": "Nenhum domínio excluído ainda."
+  },
+  "optionsKeyboardShortcut": {
+    "message": "⌨️ Atalho de Teclado"
+  },
+  "optionsToggleSidebar": {
+    "message": "Ativar/Desativar Barra Lateral"
+  },
+  "optionsToggleSidebarDesc": {
+    "message": "Abrir ou fechar o painel da barra lateral do LinkScout."
+  },
+  "optionsShortcutLoading": {
+    "message": "Carregando..."
+  },
+  "optionsShortcutNotSet": {
+    "message": "Não definido"
+  },
+  "optionsManageShortcuts": {
+    "message": "Gerenciar Atalhos de Extensão"
+  },
+  "optionsManageShortcutsPrefix": {
+    "message": "Você pode personalizar este atalho em"
+  },
+  "optionsSaveSettings": {
+    "message": "💾 Salvar Configurações"
+  },
+  "optionsErrorLoadingSettings": {
+    "message": "Erro ao carregar configurações"
+  },
+  "optionsReorganizingFolders": {
+    "message": "⏳ Reorganizando pastas..."
+  },
+  "optionsSettingsSavedReorganized": {
+    "message": "✓ Configurações salvas! $count$ pastas reorganizadas.",
+    "placeholders": {
+      "count": { "content": "$1", "example": "5" }
+    }
+  },
+  "optionsSettingsSaved": {
+    "message": "✓ Configurações salvas!"
+  },
+  "optionsSettingsSavedReorgFailed": {
+    "message": "✓ Configurações salvas (reorganização falhou)"
+  },
+  "optionsSettingsSavedSuccess": {
+    "message": "✓ Configurações salvas com sucesso!"
+  },
+  "optionsErrorSavingSettings": {
+    "message": "✗ Erro ao salvar configurações"
+  },
+  "optionsRemoveButton": {
+    "message": "🗑️ Remover"
+  },
+  "optionsDomainAdded": {
+    "message": "✓ \"$domain$\" adicionado à lista de exclusão",
+    "placeholders": {
+      "domain": { "content": "$1", "example": "exemplo.com" }
+    }
+  },
+  "optionsErrorAddingDomain": {
+    "message": "✗ Erro ao adicionar domínio"
+  },
+  "optionsDomainRemoved": {
+    "message": "✓ \"$domain$\" removido da lista de exclusão",
+    "placeholders": {
+      "domain": { "content": "$1", "example": "exemplo.com" }
+    }
+  },
+  "optionsErrorRemovingDomain": {
+    "message": "✗ Erro ao remover domínio"
+  }
+}

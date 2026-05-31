@@ -1,0 +1,236 @@
+{
+  "extensionName": {
+    "message": "LinkScout"
+  },
+  "extensionDescription": {
+    "message": "Saves links from selected text as bookmarks with smart organization."
+  },
+  "sidebarTitle": {
+    "message": "LinkScout - Bookmarks"
+  },
+  "toggleSidebarShortcut": {
+    "message": "Toggle LinkScout sidebar"
+  },
+  "browserActionTooltip": {
+    "message": "LinkScout - Right click selected text to save links"
+  },
+  "contextMenuSaveLinks": {
+    "message": "🔗 LinkScout: Save Links from Selection"
+  },
+  "contextMenuSaveLink": {
+    "message": "🔗 LinkScout: Save This Link"
+  },
+  "contextMenuSaveAllTabs": {
+    "message": "🔗 LinkScout: Save and Close All Tabs"
+  },
+  "sidebarSearchPlaceholder": {
+    "message": "Search..."
+  },
+  "sidebarSearchTitle": {
+    "message": "Search bookmarks"
+  },
+  "sidebarFilterByStatus": {
+    "message": "Filter by status"
+  },
+  "sidebarFilterAll": {
+    "message": "⚡ All links"
+  },
+  "sidebarFilterUnresolved": {
+    "message": "⚠️ Unresolved"
+  },
+  "sidebarFilterError": {
+    "message": "❌ Error"
+  },
+  "sidebarGroupByDomain": {
+    "message": "Group by domain"
+  },
+  "sidebarSortOrder": {
+    "message": "Sort Order"
+  },
+  "sidebarCollapseAll": {
+    "message": "Collapse all"
+  },
+  "sidebarExpandAll": {
+    "message": "Expand all"
+  },
+  "sidebarRefresh": {
+    "message": "Refresh"
+  },
+  "sidebarLoadingBookmarks": {
+    "message": "Loading bookmarks..."
+  },
+  "sidebarNoBookmarks": {
+    "message": "📭 No bookmarks saved yet."
+  },
+  "sidebarShuffleBookmarks": {
+    "message": "Shuffle bookmarks"
+  },
+  "sidebarResolveUrls": {
+    "message": "Resolve URLs"
+  },
+  "sidebarOpenAll": {
+    "message": "🚀 Open all"
+  },
+  "sidebarOpenAllInTabs": {
+    "message": "Open all in tabs"
+  },
+  "sidebarDeleteFolder": {
+    "message": "Delete folder"
+  },
+  "sidebarExcludeDomain": {
+    "message": "Exclude this domain from resolution"
+  },
+  "sidebarResolvedCount": {
+    "message": "✅ $count$ resolved",
+    "placeholders": {
+      "count": { "content": "$1", "example": "5" }
+    }
+  },
+  "sidebarAllUpToDate": {
+    "message": "✅ All up to date"
+  },
+  "sidebarSortNewestFirst": {
+    "message": "Sort: Newest First"
+  },
+  "sidebarSortOldestFirst": {
+    "message": "Sort: Oldest First"
+  },
+  "sidebarShowingUnresolved": {
+    "message": "Showing: Unresolved only"
+  },
+  "sidebarShowingError": {
+    "message": "Showing: Error only"
+  },
+  "sidebarDomainExcluded": {
+    "message": "🚫 $domain$ excluded from resolution",
+    "placeholders": {
+      "domain": { "content": "$1", "example": "example.com" }
+    }
+  },
+  "optionsPageTitle": {
+    "message": "LinkScout - Settings"
+  },
+  "optionsSubtitle": {
+    "message": "Configure how your links are organized and saved"
+  },
+  "optionsOrganization": {
+    "message": "📁 Organization"
+  },
+  "optionsWhereToSave": {
+    "message": "Where to Save Bookmarks"
+  },
+  "optionsBookmarksToolbar": {
+    "message": "Bookmarks Toolbar"
+  },
+  "optionsBookmarksMenu": {
+    "message": "Bookmarks Menu"
+  },
+  "optionsOtherBookmarks": {
+    "message": "Other Bookmarks"
+  },
+  "optionsLocationHint": {
+    "message": "Choose the main location where the root folder will be created"
+  },
+  "optionsRootFolder": {
+    "message": "Root Bookmarks Folder"
+  },
+  "optionsRootFolderPlaceholder": {
+    "message": "LinkScout"
+  },
+  "optionsRootFolderHint": {
+    "message": "Name of the main folder where bookmarks will be organized"
+  },
+  "optionsFeatures": {
+    "message": "⚙️ Features"
+  },
+  "optionsLinksPerFolder": {
+    "message": "Links per Folder"
+  },
+  "optionsLinksPerFolderHint": {
+    "message": "When there are more links than this limit, numbered subfolders will be created (e.g., 1-10, 11-20)"
+  },
+  "optionsExcludedDomains": {
+    "message": "🚫 Excluded Domains"
+  },
+  "optionsExcludedDomainsDesc": {
+    "message": "Domains in this list will be skipped during automatic URL resolution."
+  },
+  "optionsExcludeDomainPlaceholder": {
+    "message": "e.g. example.com"
+  },
+  "optionsAddButton": {
+    "message": "+ Add"
+  },
+  "optionsNoDomainsExcluded": {
+    "message": "No domains excluded yet."
+  },
+  "optionsKeyboardShortcut": {
+    "message": "⌨️ Keyboard Shortcut"
+  },
+  "optionsToggleSidebar": {
+    "message": "Toggle Sidebar"
+  },
+  "optionsToggleSidebarDesc": {
+    "message": "Open or close the LinkScout sidebar panel."
+  },
+  "optionsShortcutLoading": {
+    "message": "Loading..."
+  },
+  "optionsShortcutNotSet": {
+    "message": "Not set"
+  },
+  "optionsManageShortcuts": {
+    "message": "Manage Extension Shortcuts"
+  },
+  "optionsManageShortcutsPrefix": {
+    "message": "You can customize this shortcut in"
+  },
+  "optionsSaveSettings": {
+    "message": "💾 Save Settings"
+  },
+  "optionsErrorLoadingSettings": {
+    "message": "Error loading settings"
+  },
+  "optionsReorganizingFolders": {
+    "message": "⏳ Reorganizing folders..."
+  },
+  "optionsSettingsSavedReorganized": {
+    "message": "✓ Settings saved! $count$ folders reorganized.",
+    "placeholders": {
+      "count": { "content": "$1", "example": "5" }
+    }
+  },
+  "optionsSettingsSaved": {
+    "message": "✓ Settings saved!"
+  },
+  "optionsSettingsSavedReorgFailed": {
+    "message": "✓ Settings saved (reorganization failed)"
+  },
+  "optionsSettingsSavedSuccess": {
+    "message": "✓ Settings saved successfully!"
+  },
+  "optionsErrorSavingSettings": {
+    "message": "✗ Error saving settings"
+  },
+  "optionsRemoveButton": {
+    "message": "🗑️ Remove"
+  },
+  "optionsDomainAdded": {
+    "message": "✓ \"$domain$\" added to exclusion list",
+    "placeholders": {
+      "domain": { "content": "$1", "example": "example.com" }
+    }
+  },
+  "optionsErrorAddingDomain": {
+    "message": "✗ Error adding domain"
+  },
+  "optionsDomainRemoved": {
+    "message": "✓ \"$domain$\" removed from exclusion list",
+    "placeholders": {
+      "domain": { "content": "$1", "example": "example.com" }
+    }
+  },
+  "optionsErrorRemovingDomain": {
+    "message": "✗ Error removing domain"
+  }
+}

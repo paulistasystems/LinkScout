@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-i18n-page-title="optionsPageTitle">
 
 <head>
     <meta charset="UTF-8">
@@ -292,102 +292,100 @@
 
 <body>
     <div class="container">
-        <h1>🔗 LinkScout</h1>
-        <p class="subtitle">Configure how your links are organized and saved</p>
+<h1>🔗 LinkScout</h1>
+<p class="subtitle" data-i18n="optionsSubtitle"></p>
 
-        <div class="section">
-            <h2>📁 Organization</h2>
-            <div class="form-group">
-                <label for="bookmarkLocation">Where to Save Bookmarks</label>
-                <select id="bookmarkLocation">
-                    <option value="toolbar_____">Bookmarks Toolbar</option>
-                    <option value="menu________">Bookmarks Menu</option>
-                    <option value="unfiled_____">Other Bookmarks</option>
-                </select>
-                <p class="hint">Choose the main location where the root folder will be created</p>
-            </div>
-            <div class="form-group">
-                <label for="rootFolder">Root Bookmarks Folder</label>
-                <input type="text" id="rootFolder" placeholder="LinkScout">
-                <p class="hint">Name of the main folder where bookmarks will be organized</p>
-            </div>
-        </div>
+<div class="section">
+<h2 data-i18n="optionsOrganization"></h2>
+<div class="form-group">
+<label for="bookmarkLocation" data-i18n="optionsWhereToSave"></label>
+<select id="bookmarkLocation">
+<option value="toolbar_____" data-i18n="optionsBookmarksToolbar"></option>
+<option value="menu________" data-i18n="optionsBookmarksMenu"></option>
+<option value="unfiled_____" data-i18n="optionsOtherBookmarks"></option>
+</select>
+<p class="hint" data-i18n="optionsLocationHint"></p>
+</div>
+<div class="form-group">
+<label for="rootFolder" data-i18n="optionsRootFolder"></label>
+<input type="text" id="rootFolder" data-i18n-placeholder="optionsRootFolderPlaceholder" placeholder="LinkScout">
+<p class="hint" data-i18n="optionsRootFolderHint"></p>
+</div>
+</div>
 
-        <div class="section">
-            <h2>⚙️ Features</h2>
-
-
-
-            <div class="form-group" style="margin-top: 15px;">
-                <label for="linksPerFolder">Links per Folder</label>
-                <input type="number" id="linksPerFolder" min="1" max="100" value="10"
-                    style="width: 100%; padding: 12px 15px; border: 2px solid #ddd; border-radius: 8px; font-size: 1em;">
-                <p class="hint">When there are more links than this limit, numbered subfolders will be created (e.g.,
-                    1-10, 11-20)</p>
-            </div>
+<div class="section">
+<h2 data-i18n="optionsFeatures"></h2>
 
 
-        </div>
 
-        <div class="section">
-            <h2>🚫 Excluded Domains</h2>
-            <p style="color: #666; font-size: 0.9em; margin-bottom: 15px;">
-                Domains in this list will be skipped during automatic URL resolution.
-            </p>
-            <div class="form-group" style="margin-bottom: 15px;">
-                <div style="display: flex; gap: 8px;">
-                    <input type="text" id="excludeDomainInput" placeholder="e.g. example.com" style="flex: 1;">
-                    <button id="addExcludeDomainBtn" style="
-                        padding: 12px 20px;
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                        color: white;
-                        border: none;
-                        border-radius: 8px;
-                        font-size: 1em;
-                        font-weight: 600;
-                        cursor: pointer;
-                        transition: all 0.3s;
-                        white-space: nowrap;
-                    ">+ Add</button>
-                </div>
-            </div>
-            <div id="excludedDomainsList" style="display: flex; flex-direction: column; gap: 6px;"></div>
-            <p id="excludedDomainsEmpty" class="hint" style="display: none; text-align: center; padding: 10px;">
-                No domains excluded yet.
-            </p>
-        </div>
+<div class="form-group" style="margin-top: 15px;">
+<label for="linksPerFolder" data-i18n="optionsLinksPerFolder"></label>
+<input type="number" id="linksPerFolder" min="1" max="100" value="10"
+style="width: 100%; padding: 12px 15px; border: 2px solid #ddd; border-radius: 8px; font-size: 1em;">
+<p class="hint" data-i18n="optionsLinksPerFolderHint"></p>
+</div>
 
-        <div class="section">
-            <h2>⌨️ Keyboard Shortcut</h2>
-            <div class="toggle-group">
-                <div class="toggle-info">
-                    <div class="toggle-label">Toggle Sidebar</div>
-                    <div class="toggle-description">Open or close the LinkScout sidebar panel.</div>
-                </div>
-                <kbd id="shortcutDisplay" style="
-                    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-                    font-size: 0.85em;
-                    background: linear-gradient(180deg, #f8f8f8, #e8e8e8);
-                    border: 1px solid #ccc;
-                    border-bottom: 2px solid #bbb;
-                    border-radius: 5px;
-                    padding: 5px 10px;
-                    color: #333;
-                    white-space: nowrap;
-                    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-                ">Loading...</kbd>
-            </div>
-            <p class="hint" style="margin-top: 10px;">
-                You can customize this shortcut in <a href="#" id="manageShortcutsLink" style="color: #667eea; text-decoration: underline; cursor: pointer;">Manage Extension Shortcuts</a>.
-            </p>
-        </div>
 
-        <button class="save-button" id="saveButton">💾 Save Settings</button>
+</div>
+
+<div class="section">
+<h2 data-i18n="optionsExcludedDomains"></h2>
+<p style="color: #666; font-size: 0.9em; margin-bottom: 15px;" data-i18n="optionsExcludedDomainsDesc">
+</p>
+<div class="form-group" style="margin-bottom: 15px;">
+<div style="display: flex; gap: 8px;">
+<input type="text" id="excludeDomainInput" data-i18n-placeholder="optionsExcludeDomainPlaceholder" style="flex: 1;">
+<button id="addExcludeDomainBtn" style="
+padding: 12px 20px;
+background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+color: white;
+border: none;
+border-radius: 8px;
+font-size: 1em;
+font-weight: 600;
+cursor: pointer;
+transition: all 0.3s;
+white-space: nowrap;
+" data-i18n="optionsAddButton"></button>
+</div>
+</div>
+<div id="excludedDomainsList" style="display: flex; flex-direction: column; gap: 6px;"></div>
+<p id="excludedDomainsEmpty" class="hint" style="display: none; text-align: center; padding: 10px;" data-i18n="optionsNoDomainsExcluded">
+</p>
+</div>
+
+<div class="section">
+<h2 data-i18n="optionsKeyboardShortcut"></h2>
+<div class="toggle-group">
+<div class="toggle-info">
+<div class="toggle-label" data-i18n="optionsToggleSidebar"></div>
+<div class="toggle-description" data-i18n="optionsToggleSidebarDesc"></div>
+</div>
+<kbd id="shortcutDisplay" style="
+font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+font-size: 0.85em;
+background: linear-gradient(180deg, #f8f8f8, #e8e8e8);
+border: 1px solid #ccc;
+border-bottom: 2px solid #bbb;
+border-radius: 5px;
+padding: 5px 10px;
+color: #333;
+white-space: nowrap;
+box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+" data-i18n="optionsShortcutLoading"></kbd>
+</div>
+<p class="hint" style="margin-top: 10px;">
+<span data-i18n="optionsManageShortcutsPrefix"></span> <a href="#" id="manageShortcutsLink" style="color: #667eea; text-decoration: underline; cursor: pointer;" data-i18n="optionsManageShortcuts"></a>.
+</p>
+</div>
+
+<button class="save-button" id="saveButton" data-i18n="optionsSaveSettings"></button>
 
         <div class="status-message" id="statusMessage"></div>
     </div>
 
-    <script src="options.js"></script>
+    <script src="i18n.js"></script>
+<script src="options.js"></script>
 </body>
 
 </html>
