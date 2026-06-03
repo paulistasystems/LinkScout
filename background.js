@@ -2274,8 +2274,21 @@ async function moveFolderToTop(folderId) {
     if (!folder || !folder[0]) return { success: false, error: 'Folder not found' };
     const bookmark = folder[0];
     if (bookmark.url) return { success: false, error: 'Not a folder' };
+
+    // Folders are displayed sorted by their updatedAt timestamp, so the bookmark
+    // index alone won't keep the folder on top — its timestamp must beat every
+    // sibling's, otherwise the silent reload re-sorts it back to its old spot.
+    const siblings = await browser.bookmarks.getChildren(bookmark.parentId);
+    const timestamps = (await browser.storage.local.get('folderTimestamps')).folderTimestamps || {};
+    let maxTs = Date.now();
+    for (const sib of siblings) {
+      if (!sib.url) { const t = timestamps[sib.id] || 0; if (t > maxTs) maxTs = t; }
+    }
+    timestamps[folderId] = maxTs + 1;
+    await browser.storage.local.set({ folderTimestamps: timestamps });
+
     await browser.bookmarks.move(folderId, { parentId: bookmark.parentId, index: 0 });
-    return { success: true };
+    return { success: true, updatedAt: timestamps[folderId] };
   } catch (error) {
     console.error('Error moving folder to top:', error);
     return { success: false, error: error.message };
@@ -2289,10 +2302,21 @@ async function moveFolderToBottom(folderId) {
     const bookmark = folder[0];
     if (bookmark.url) return { success: false, error: 'Not a folder' };
     const siblings = await browser.bookmarks.getChildren(bookmark.parentId);
+
+    // Mirror moveFolderToTop: drive the visual order via the timestamp sort by
+    // making this folder's timestamp older than every sibling's.
+    const timestamps = (await browser.storage.local.get('folderTimestamps')).folderTimestamps || {};
+    let minTs = Date.now();
+    for (const sib of siblings) {
+      if (!sib.url) { const t = timestamps[sib.id] || 0; if (t < minTs) minTs = t; }
+    }
+    timestamps[folderId] = minTs - 1;
+    await browser.storage.local.set({ folderTimestamps: timestamps });
+
     // move() places the node before the item currently at the given index; using the
     // sibling count moves it to the end (the API clamps/handles the current position).
     await browser.bookmarks.move(folderId, { parentId: bookmark.parentId, index: siblings.length });
-    return { success: true };
+    return { success: true, updatedAt: timestamps[folderId] };
   } catch (error) {
     console.error('Error moving folder to bottom:', error);
     return { success: false, error: error.message };
