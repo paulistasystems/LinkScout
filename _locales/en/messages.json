@@ -65,6 +65,9 @@
   "sidebarShuffleBookmarks": {
     "message": "Shuffle bookmarks"
   },
+  "sidebarMoveToTop": {
+    "message": "Move to top"
+  },
   "sidebarResolveUrls": {
     "message": "Resolve URLs"
   },

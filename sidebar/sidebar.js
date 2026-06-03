@@ -152,7 +152,8 @@ document.addEventListener('DOMContentLoaded', () => {
 async function loadBookmarks() {
   showLoading(true);
   try {
-    await browser.runtime.sendMessage({ action: 'syncBookmarksLightweight' });
+        await browser.runtime.sendMessage({ action: 'syncBookmarks' });
+        await browser.runtime.sendMessage({ action: 'restoreFromDB' });
     const result = await browser.runtime.sendMessage({ action: 'getBookmarkTree' });
     if (result.error) {
       console.error('Error loading bookmarks:', result.error);
@@ -342,20 +343,20 @@ function createFolderElement(folder) {
     const nameSpan = document.createElement('span'); nameSpan.className = 'folder-name'; nameSpan.textContent = folder.title; headerEl.appendChild(nameSpan);
     const countSpan = document.createElement('span'); countSpan.className = 'folder-count'; countSpan.textContent = bookmarkCount; headerEl.appendChild(countSpan);
     const actionsDiv = document.createElement('div'); actionsDiv.className = 'folder-actions';
-    const shuffleBtn = document.createElement('button'); shuffleBtn.className = 'folder-action-btn shuffle-btn';   shuffleBtn.title = browser.i18n.getMessage('sidebarShuffleBookmarks'); shuffleBtn.textContent = '🔀'; actionsDiv.appendChild(shuffleBtn);
+  const moveToTopBtn = document.createElement('button'); moveToTopBtn.className = 'folder-action-btn move-to-top-btn'; moveToTopBtn.title = browser.i18n.getMessage('sidebarMoveToTop'); moveToTopBtn.textContent = '⬆'; actionsDiv.appendChild(moveToTopBtn);
     const resolveBtn = document.createElement('button'); resolveBtn.className = 'folder-action-btn resolve-btn';   resolveBtn.title = browser.i18n.getMessage('sidebarResolveUrls'); resolveBtn.textContent = '🔍'; actionsDiv.appendChild(resolveBtn);
     const openAllBtn = document.createElement('button'); openAllBtn.className = 'folder-action-btn open-all-btn';   openAllBtn.title = browser.i18n.getMessage('sidebarOpenAllInTabs');
   openAllBtn.textContent = browser.i18n.getMessage('sidebarOpenAll'); actionsDiv.appendChild(openAllBtn);
     const deleteBtn = document.createElement('button'); deleteBtn.className = 'folder-action-btn delete-folder-btn';   deleteBtn.title = browser.i18n.getMessage('sidebarDeleteFolder'); deleteBtn.textContent = '🗑️'; actionsDiv.appendChild(deleteBtn);
     headerEl.appendChild(actionsDiv);
-    if (isVirtualFolder) {
-        shuffleBtn.addEventListener('click', (e) => { e.stopPropagation(); shuffleVirtualFolder(folderEl); });
-        resolveBtn.addEventListener('click', (e) => { e.stopPropagation(); resolveVirtualFolder(folder); });
+  if (isVirtualFolder) {
+    moveToTopBtn.addEventListener('click', (e) => { e.stopPropagation(); moveVirtualFolderToTop(folderEl); });
+    resolveBtn.addEventListener('click', (e) => { e.stopPropagation(); resolveVirtualFolder(folder); });
         openAllBtn.addEventListener('click', (e) => { e.stopPropagation(); openAllInVirtualFolder(folder); });
         deleteBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteVirtualFolder(folder); });
     } else {
-        shuffleBtn.addEventListener('click', (e) => { e.stopPropagation(); shuffleFolder(folder.id, folderEl); });
-        resolveBtn.addEventListener('click', (e) => { e.stopPropagation(); resolveFolder(folder.id, folderEl); });
+    moveToTopBtn.addEventListener('click', (e) => { e.stopPropagation(); moveToTopFolder(folder.id, folderEl); });
+    resolveBtn.addEventListener('click', (e) => { e.stopPropagation(); resolveFolder(folder.id, folderEl); });
         openAllBtn.addEventListener('click', (e) => { e.stopPropagation(); openAllInFolder(folder.id); });
         deleteBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteFolder(folder.id); });
     }
@@ -461,19 +462,19 @@ async function deleteVirtualFolder(folder) {
     removeElementAndUpdateCounts(`.folder[data-id="${folder.id}"]`, true);
 }
 
-async function shuffleFolder(folderId, folderEl) {
-    try {
-        const result = await browser.runtime.sendMessage({ action: 'shuffleFolder', folderId });
-        if (result && result.success) { await silentLoadBookmarks(); const updatedFolderEl = document.querySelector(`.folder[data-id="${folderId}"]`); if (updatedFolderEl) { updatedFolderEl.classList.remove('collapsed'); } }
-    } catch (error) { console.error('Error shuffling folder:', error); }
+async function moveToTopFolder(folderId, folderEl) {
+  try {
+    const result = await browser.runtime.sendMessage({ action: 'moveFolderToTop', folderId });
+    if (result && result.success) { await silentLoadBookmarks(); }
+  } catch (error) { console.error('Error moving folder to top:', error); }
 }
 
-function shuffleVirtualFolder(folderEl) {
-    const contentEl = folderEl.querySelector('.folder-content'); if (!contentEl) return;
-    const children = Array.from(contentEl.children);
-    for (let i = children.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [children[i], children[j]] = [children[j], children[i]]; }
-    children.forEach(child => contentEl.appendChild(child));
+function moveVirtualFolderToTop(folderEl) {
+  const parent = folderEl.parentElement;
+  if (!parent) return;
+  parent.insertBefore(folderEl, parent.firstChild);
 }
+
 
 async function resolveFolder(folderId, folderEl) {
     const resolveBtn = folderEl.querySelector('.resolve-btn');

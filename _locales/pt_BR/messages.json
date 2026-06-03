@@ -65,6 +65,9 @@
   "sidebarShuffleBookmarks": {
     "message": "Embaralhar favoritos"
   },
+  "sidebarMoveToTop": {
+    "message": "Mover para o topo"
+  },
   "sidebarResolveUrls": {
     "message": "Resolver URLs"
   },

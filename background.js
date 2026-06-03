@@ -2267,6 +2267,21 @@ async function deleteFolderAndContents(folderId) {
   }
 }
 
+// Move a folder to the top (index 0) of its parent
+async function moveFolderToTop(folderId) {
+  try {
+    const folder = await browser.bookmarks.get(folderId);
+    if (!folder || !folder[0]) return { success: false, error: 'Folder not found' };
+    const bookmark = folder[0];
+    if (bookmark.url) return { success: false, error: 'Not a folder' };
+    await browser.bookmarks.move(folderId, { parentId: bookmark.parentId, index: 0 });
+    return { success: true };
+  } catch (error) {
+    console.error('Error moving folder to top:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 // Shuffle all bookmarks within a folder (and its numbered subfolders) randomly
 async function shuffleBookmarksInFolder(folderId) {
   try {
@@ -2701,10 +2716,15 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
     return syncResult;
   }
 
-  if (message.action === 'syncBookmarksLightweight') {
-    const syncResult = await syncDatabaseWithBookmarksLightweight();
-    return syncResult;
-  }
+if (message.action === 'syncBookmarksLightweight') {
+        const syncResult = await syncDatabaseWithBookmarksLightweight();
+        return syncResult;
+    }
+
+    if (message.action === 'restoreFromDB') {
+        await restoreBookmarksFromDB();
+        return { restored: true };
+    }
 
 if (message.action === 'getBookmarkTree') {
   return await getBookmarkTreeForSidebar();
@@ -2720,6 +2740,10 @@ if (message.action === 'getBookmarkTree') {
 
   if (message.action === 'openMultipleAndTrash') {
     return await openMultipleAndTrash(message.bookmarkIds);
+  }
+
+  if (message.action === 'moveFolderToTop') {
+    return await moveFolderToTop(message.folderId);
   }
 
   if (message.action === 'shuffleFolder') {
