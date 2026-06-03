@@ -9,7 +9,14 @@ This document details the manual process for preparing and publishing a new vers
 ## Deployment Process
 
 ### 1. Increment the Version
-Edit the [manifest.json](manifest.json) file and update the `"version"` field following semantic versioning (Ex: `2.7.20` -> `2.7.21`).
+Edit the [manifest.json](manifest.json) file and update the `"version"` field following [semantic versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`). Choose the bump based on what the release contains:
+
+- **PATCH** (`2.7.49` -> `2.7.50`) — backward-compatible bug fixes only. No new UI or features (e.g. fixing a button that reverts).
+- **MINOR** (`2.7.50` -> `2.8.0`) — new backward-compatible features or UI additions (e.g. adding a new sidebar button). Reset PATCH to `0`.
+- **MAJOR** (`2.7.50` -> `3.0.0`) — breaking changes (incompatible data/schema, removed features). Reset MINOR and PATCH to `0`.
+
+> [!NOTE]
+> If a release mixes a fix and a new feature, bump the highest applicable level (MINOR over PATCH).
 
 ### 2. Update the Roadmap
 Update the [ROADMAP.md](ROADMAP.md) file to reflect the changes made in this release:
