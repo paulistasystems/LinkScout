@@ -2440,15 +2440,16 @@ async function getBookmarkTreeForSidebar() {
       console.error('[LinkScout] Error building DB metadata map for sidebar:', e);
     }
 
-    // Build tree recursively
+    // Build tree recursively. Subfolders are walked in parallel so the total
+    // time is bounded by the deepest branch rather than the sum of every
+    // getChildren() call — this runs on every sidebar open.
     async function buildTree(folderId) {
-      const items = [];
       const children = await browser.bookmarks.getChildren(folderId);
 
-      for (const child of children) {
+      const items = await Promise.all(children.map(async (child) => {
         if (child.url) {
           const meta = dbMetaMap[child.url];
-          items.push({
+          return {
             id: child.id,
             title: child.title,
             url: child.url,
@@ -2456,19 +2457,19 @@ async function getBookmarkTreeForSidebar() {
             dateAdded: child.dateAdded || 0,
             redirectResolved: meta ? meta.redirectResolved : false,
             originalUrl: meta ? meta.originalUrl : child.url
-          });
+          };
         } else {
           const subItems = await buildTree(child.id);
-          items.push({
+          return {
             id: child.id,
             title: child.title,
             type: 'folder',
             children: subItems,
             updatedAt: timestamps[child.id] || 0, // Default to 0 if not set
             dateAdded: child.dateAdded || 0
-          });
+          };
         }
-      }
+      }));
 
       // Sort items: Folders first (by modified date), then bookmarks
       // Or just mix them and sort by specific logic? The request implies folders.

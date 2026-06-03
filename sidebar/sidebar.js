@@ -152,13 +152,30 @@ document.addEventListener('DOMContentLoaded', () => {
 async function loadBookmarks() {
   showLoading(true);
   try {
-        await browser.runtime.sendMessage({ action: 'syncBookmarks' });
-        await browser.runtime.sendMessage({ action: 'restoreFromDB' });
-    const result = await browser.runtime.sendMessage({ action: 'getBookmarkTree' });
+        // Use the lightweight sync on the hot path: it only adds bookmarks that
+        // are missing from IndexedDB. The full sync (dedup + reverse-sync purge)
+        // already runs once at startup (see restoreBookmarksFromDB().then(...) in
+        // background.js), so re-running it on every sidebar open just repeats two
+        // full bookmark traversals.
+        await browser.runtime.sendMessage({ action: 'syncBookmarksLightweight' });
+    let result = await browser.runtime.sendMessage({ action: 'getBookmarkTree' });
     if (result.error) {
       console.error('Error loading bookmarks:', result.error);
       showEmpty(true);
       return;
+    }
+    // Two-way sync safety net (v2.7.46): only when the Firefox tree is empty but
+    // IndexedDB may still hold links (e.g. a Firefox Sync wipe) do we pay for the
+    // emergency restore, then re-fetch. restoreFromDB itself bails immediately if
+    // the folder isn't empty, so this stays off the common-case hot path.
+    if (!result.bookmarks || result.bookmarks.length === 0) {
+      await browser.runtime.sendMessage({ action: 'restoreFromDB' });
+      result = await browser.runtime.sendMessage({ action: 'getBookmarkTree' });
+      if (result.error) {
+        console.error('Error loading bookmarks:', result.error);
+        showEmpty(true);
+        return;
+      }
     }
     linkscoutFolderId = result.linkscoutFolderId;
     allBookmarksData = result.bookmarks;
