@@ -463,16 +463,52 @@ async function deleteVirtualFolder(folder) {
 }
 
 async function moveToTopFolder(folderId, folderEl) {
-  try {
-    const result = await browser.runtime.sendMessage({ action: 'moveFolderToTop', folderId });
-    if (result && result.success) { await silentLoadBookmarks(); }
-  } catch (error) { console.error('Error moving folder to top:', error); }
+try {
+const result = await browser.runtime.sendMessage({ action: 'moveFolderToTop', folderId });
+if (result && result.success) {
+const parent = folderEl.parentElement;
+if (parent) {
+const firstEl = parent.querySelector('.folder, .bookmark-item');
+if (firstEl && firstEl !== folderEl) {
+parent.insertBefore(folderEl, firstEl);
+}
+}
+if (allBookmarksData) {
+if (parent === bookmarkTreeEl) {
+const idx = allBookmarksData.findIndex(n => n.id === folderId);
+if (idx > 0) {
+const [node] = allBookmarksData.splice(idx, 1);
+allBookmarksData.unshift(node);
+}
+} else if (parent && parent.dataset && parent.dataset.id) {
+const parentId = parent.dataset.id;
+const folderParent = allBookmarksData.find(n => n.type === 'folder' && n.id === parentId);
+if (folderParent && folderParent.children) {
+const childIdx = folderParent.children.findIndex(n => n.id === folderId);
+if (childIdx > 0) {
+const [node] = folderParent.children.splice(childIdx, 1);
+folderParent.children.unshift(node);
+}
+} else {
+const idx = allBookmarksData.findIndex(n => n.id === folderId);
+if (idx > 0) {
+const [node] = allBookmarksData.splice(idx, 1);
+allBookmarksData.unshift(node);
+}
+}
+}
+}
+}
+} catch (error) { console.error('Error moving folder to top:', error); }
 }
 
 function moveVirtualFolderToTop(folderEl) {
-  const parent = folderEl.parentElement;
-  if (!parent) return;
-  parent.insertBefore(folderEl, parent.firstChild);
+const parent = folderEl.parentElement;
+if (!parent) return;
+const firstEl = parent.querySelector('.folder, .bookmark-item');
+if (firstEl && firstEl !== folderEl) {
+parent.insertBefore(folderEl, firstEl);
+}
 }
 
 
