@@ -68,6 +68,9 @@
   "sidebarMoveToTop": {
     "message": "Move to top"
   },
+  "sidebarMoveToBottom": {
+    "message": "Move to bottom"
+  },
   "sidebarResolveUrls": {
     "message": "Resolve URLs"
   },

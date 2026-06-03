@@ -2282,6 +2282,23 @@ async function moveFolderToTop(folderId) {
   }
 }
 
+async function moveFolderToBottom(folderId) {
+  try {
+    const folder = await browser.bookmarks.get(folderId);
+    if (!folder || !folder[0]) return { success: false, error: 'Folder not found' };
+    const bookmark = folder[0];
+    if (bookmark.url) return { success: false, error: 'Not a folder' };
+    const siblings = await browser.bookmarks.getChildren(bookmark.parentId);
+    // move() places the node before the item currently at the given index; using the
+    // sibling count moves it to the end (the API clamps/handles the current position).
+    await browser.bookmarks.move(folderId, { parentId: bookmark.parentId, index: siblings.length });
+    return { success: true };
+  } catch (error) {
+    console.error('Error moving folder to bottom:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 // Shuffle all bookmarks within a folder (and its numbered subfolders) randomly
 async function shuffleBookmarksInFolder(folderId) {
   try {
@@ -2744,6 +2761,10 @@ if (message.action === 'getBookmarkTree') {
 
   if (message.action === 'moveFolderToTop') {
     return await moveFolderToTop(message.folderId);
+  }
+
+  if (message.action === 'moveFolderToBottom') {
+    return await moveFolderToBottom(message.folderId);
   }
 
   if (message.action === 'shuffleFolder') {

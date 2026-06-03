@@ -344,6 +344,7 @@ function createFolderElement(folder) {
     const countSpan = document.createElement('span'); countSpan.className = 'folder-count'; countSpan.textContent = bookmarkCount; headerEl.appendChild(countSpan);
     const actionsDiv = document.createElement('div'); actionsDiv.className = 'folder-actions';
   const moveToTopBtn = document.createElement('button'); moveToTopBtn.className = 'folder-action-btn move-to-top-btn'; moveToTopBtn.title = browser.i18n.getMessage('sidebarMoveToTop'); moveToTopBtn.textContent = '⬆'; actionsDiv.appendChild(moveToTopBtn);
+  const moveToBottomBtn = document.createElement('button'); moveToBottomBtn.className = 'folder-action-btn move-to-bottom-btn'; moveToBottomBtn.title = browser.i18n.getMessage('sidebarMoveToBottom'); moveToBottomBtn.textContent = '⬇'; actionsDiv.appendChild(moveToBottomBtn);
     const resolveBtn = document.createElement('button'); resolveBtn.className = 'folder-action-btn resolve-btn';   resolveBtn.title = browser.i18n.getMessage('sidebarResolveUrls'); resolveBtn.textContent = '🔍'; actionsDiv.appendChild(resolveBtn);
     const openAllBtn = document.createElement('button'); openAllBtn.className = 'folder-action-btn open-all-btn';   openAllBtn.title = browser.i18n.getMessage('sidebarOpenAllInTabs');
   openAllBtn.textContent = browser.i18n.getMessage('sidebarOpenAll'); actionsDiv.appendChild(openAllBtn);
@@ -351,11 +352,13 @@ function createFolderElement(folder) {
     headerEl.appendChild(actionsDiv);
   if (isVirtualFolder) {
     moveToTopBtn.addEventListener('click', (e) => { e.stopPropagation(); moveVirtualFolderToTop(folderEl); });
+    moveToBottomBtn.addEventListener('click', (e) => { e.stopPropagation(); moveVirtualFolderToBottom(folderEl); });
     resolveBtn.addEventListener('click', (e) => { e.stopPropagation(); resolveVirtualFolder(folder); });
         openAllBtn.addEventListener('click', (e) => { e.stopPropagation(); openAllInVirtualFolder(folder); });
         deleteBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteVirtualFolder(folder); });
     } else {
     moveToTopBtn.addEventListener('click', (e) => { e.stopPropagation(); moveToTopFolder(folder.id, folderEl); });
+    moveToBottomBtn.addEventListener('click', (e) => { e.stopPropagation(); moveToBottomFolder(folder.id, folderEl); });
     resolveBtn.addEventListener('click', (e) => { e.stopPropagation(); resolveFolder(folder.id, folderEl); });
         openAllBtn.addEventListener('click', (e) => { e.stopPropagation(); openAllInFolder(folder.id); });
         deleteBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteFolder(folder.id); });
@@ -508,6 +511,57 @@ if (!parent) return;
 const firstEl = parent.querySelector('.folder, .bookmark-item');
 if (firstEl && firstEl !== folderEl) {
 parent.insertBefore(folderEl, firstEl);
+}
+}
+
+async function moveToBottomFolder(folderId, folderEl) {
+try {
+const result = await browser.runtime.sendMessage({ action: 'moveFolderToBottom', folderId });
+if (result && result.success) {
+const parent = folderEl.parentElement;
+if (parent) {
+const siblings = parent.querySelectorAll(':scope > .folder, :scope > .bookmark-item');
+const lastEl = siblings[siblings.length - 1];
+if (lastEl && lastEl !== folderEl) {
+parent.appendChild(folderEl);
+}
+}
+if (allBookmarksData) {
+if (parent === bookmarkTreeEl) {
+const idx = allBookmarksData.findIndex(n => n.id === folderId);
+if (idx !== -1 && idx < allBookmarksData.length - 1) {
+const [node] = allBookmarksData.splice(idx, 1);
+allBookmarksData.push(node);
+}
+} else if (parent && parent.dataset && parent.dataset.id) {
+const parentId = parent.dataset.id;
+const folderParent = allBookmarksData.find(n => n.type === 'folder' && n.id === parentId);
+if (folderParent && folderParent.children) {
+const childIdx = folderParent.children.findIndex(n => n.id === folderId);
+if (childIdx !== -1 && childIdx < folderParent.children.length - 1) {
+const [node] = folderParent.children.splice(childIdx, 1);
+folderParent.children.push(node);
+}
+} else {
+const idx = allBookmarksData.findIndex(n => n.id === folderId);
+if (idx !== -1 && idx < allBookmarksData.length - 1) {
+const [node] = allBookmarksData.splice(idx, 1);
+allBookmarksData.push(node);
+}
+}
+}
+}
+}
+} catch (error) { console.error('Error moving folder to bottom:', error); }
+}
+
+function moveVirtualFolderToBottom(folderEl) {
+const parent = folderEl.parentElement;
+if (!parent) return;
+const siblings = parent.querySelectorAll(':scope > .folder, :scope > .bookmark-item');
+const lastEl = siblings[siblings.length - 1];
+if (lastEl && lastEl !== folderEl) {
+parent.appendChild(folderEl);
 }
 }
 
