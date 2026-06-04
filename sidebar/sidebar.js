@@ -292,9 +292,9 @@ async function silentLoadBookmarks() {
         allBookmarksData = result.bookmarks;
         linksPerFolder = result.linksPerFolder || 10;
         renderBookmarkTree();
-        Array.from(bookmarkTreeEl.querySelectorAll('.folder')).forEach(f => {
-            if (expandedFolders.includes(f.dataset.id)) { f.classList.remove('collapsed'); }
-        });
+Array.from(bookmarkTreeEl.querySelectorAll('.folder')).forEach(f => {
+      if (expandedFolders.includes(f.dataset.id)) { f.classList.remove('collapsed'); } else { f.classList.add('collapsed'); }
+    });
         bookmarkTreeEl.scrollTop = scrollPos;
     } catch (error) { console.error('Error reloading silently:', error); }
 }
