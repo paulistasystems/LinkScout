@@ -29,18 +29,6 @@
   "sidebarSearchTitle": {
     "message": "Buscar favoritos"
   },
-  "sidebarFilterByStatus": {
-    "message": "Filtrar por status"
-  },
-  "sidebarFilterAll": {
-    "message": "⚡ Todos os links"
-  },
-  "sidebarFilterUnresolved": {
-    "message": "⚠️ Não resolvidos"
-  },
-  "sidebarFilterError": {
-    "message": "❌ Erro"
-  },
   "sidebarGroupByDomain": {
     "message": "Agrupar por domínio"
   },
@@ -100,12 +88,6 @@
   },
   "sidebarSortOldestFirst": {
     "message": "Classificação: Mais antigos primeiro"
-  },
-  "sidebarShowingUnresolved": {
-    "message": "Mostrando: Apenas não resolvidos"
-  },
-  "sidebarShowingError": {
-    "message": "Mostrando: Apenas com erro"
   },
   "sidebarDomainExcluded": {
     "message": "🚫 $domain$ excluído da resolução",

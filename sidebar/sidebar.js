@@ -53,8 +53,7 @@ let expandAllBtn;
 let sortBtn;
 let searchInput;
 let groupByDomainBtn;
-let filterStatusBtn;
-let filterStatusDropdown;
+
 
 // State
 let linkscoutFolderId = null;
@@ -64,41 +63,7 @@ let searchQuery = '';
 let allBookmarksData = []; // Store raw data for filtering/sorting
 let groupByDomain = false;
 let linksPerFolder = 10;
-let statusFilter = 'all'; // 'all', 'unresolved', 'error'
 
-// Known redirect/shortener domains that indicate an unresolved link
-const REDIRECT_DOMAINS = [
-  't.co', 'bit.ly', 'tinyurl.com', 'lnkd.in', 'ow.ly', 'is.gd',
-  'buff.ly', 'j.mp', 'dlvr.it', 'shorturl.at', 'rb.gy', 'cutt.ly',
-  'v.gd', 'rebrand.ly', 'smarturl.it', 'cli.re', 'soo.gd', 'lc.chat', 'sq.link',
-  'bbc.in', 'mailchi.mp', 'eepurl.com', 'tinyletter.com',
-  'amzn.to', 'a.co', 'spoti.fi', 'apple.co',
-  'tcrn.ch', 'reut.rs', 'nyti.ms', 'wapo.st',
-  'on.wsj.com', 'bloom.bg', 'econ.st', 'gu.com', 'ind.pn'
-];
-
-// Check if a bookmark is unresolved (still a redirect URL)
-function isUnresolved(bookmark) {
-    if (bookmark.redirectResolved) return false;
-    try {
-        const hostname = new URL(bookmark.url).hostname.replace(/^www\./, '');
-        return REDIRECT_DOMAINS.some(d => hostname === d || hostname.endsWith('.' + d));
-    } catch { return false; }
-}
-
-// Check if a bookmark has an error (not resolved and not a known redirector)
-function hasError(bookmark) {
-    if (bookmark.redirectResolved) return false;
-    if (isUnresolved(bookmark)) return false;
-    return bookmark.url === (bookmark.originalUrl || bookmark.url) && !bookmark.redirectResolved;
-}
-
-// Get the status of a bookmark
-function getBookmarkStatus(bookmark) {
-    if (isUnresolved(bookmark)) return 'unresolved';
-    if (hasError(bookmark)) return 'error';
-    return 'resolved';
-}
 
 document.addEventListener('DOMContentLoaded', () => {
   applyI18n();
@@ -111,8 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
     sortBtn = document.getElementById('sortBtn');
     searchInput = document.getElementById('searchInput');
     groupByDomainBtn = document.getElementById('groupByDomainBtn');
-    filterStatusBtn = document.getElementById('filterStatusBtn');
-    filterStatusDropdown = document.getElementById('filterStatusDropdown');
+
 
     // Event listeners
     refreshBtn.addEventListener('click', loadBookmarks);
@@ -122,25 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
     searchInput.addEventListener('input', handleSearch);
     groupByDomainBtn.addEventListener('click', toggleGroupByDomain);
 
-    // Status filter button and dropdown
-    filterStatusBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const isVisible = filterStatusDropdown.style.display !== 'none';
-        filterStatusDropdown.style.display = isVisible ? 'none' : 'block';
-    });
-    filterStatusDropdown.querySelectorAll('.filter-option').forEach(option => {
-        option.addEventListener('click', (e) => {
-            e.stopPropagation();
-            statusFilter = option.dataset.filter;
-            updateFilterButton();
-            filterStatusDropdown.style.display = 'none';
-            renderBookmarkTree();
-        });
-    });
-    // Close dropdown when clicking outside
-    document.addEventListener('click', () => {
-        filterStatusDropdown.style.display = 'none';
-    });
+
 
     // Initial sort icon
     updateSortIcon();
@@ -223,7 +169,7 @@ function handleBookmarkCreated(id, bookmark) {
         if (allBookmarksData) findAndAdd(allBookmarksData);
     }
 
-    if (groupByDomain || searchQuery || statusFilter !== 'all') { requestSilentReload(); return; }
+    if (groupByDomain || searchQuery) { requestSilentReload(); return; }
 
     let targetContainer = null;
     let targetFolderEl = null;
@@ -308,26 +254,24 @@ function showEmpty(show) { emptyStateEl.style.display = show ? 'flex' : 'none'; 
 
 function renderBookmarkTree() {
     bookmarkTreeEl.innerHTML = '';
-    let processedItems;
-    if (groupByDomain) {
-        let allItems = JSON.parse(JSON.stringify(allBookmarksData));
-        allItems = filterNodes(allItems, searchQuery);
-        if (statusFilter !== 'all') { allItems = filterByStatus(allItems, statusFilter); }
-        processedItems = groupBookmarksByDomain(allItems);
-        processedItems = sortNodes(processedItems);
-        processedItems = filterEmptyFolders(processedItems);
-    } else {
-        processedItems = filterNodes(JSON.parse(JSON.stringify(allBookmarksData)), searchQuery);
-        if (statusFilter !== 'all') { processedItems = filterByStatus(processedItems, statusFilter); }
-        processedItems = sortNodes(processedItems);
-        processedItems = filterEmptyFolders(processedItems);
-    }
+  let processedItems;
+  if (groupByDomain) {
+    let allItems = JSON.parse(JSON.stringify(allBookmarksData));
+    allItems = filterNodes(allItems, searchQuery);
+    processedItems = groupBookmarksByDomain(allItems);
+    processedItems = sortNodes(processedItems);
+    processedItems = filterEmptyFolders(processedItems);
+  } else {
+    processedItems = filterNodes(JSON.parse(JSON.stringify(allBookmarksData)), searchQuery);
+    processedItems = sortNodes(processedItems);
+    processedItems = filterEmptyFolders(processedItems);
+  }
     if (!processedItems || processedItems.length === 0) { showEmpty(true); return; }
     showEmpty(false);
     processedItems.forEach(item => {
         if (item.type === 'folder') {
             const folderEl = createFolderElement(item);
-            if (searchQuery || groupByDomain || statusFilter !== 'all') { folderEl.classList.remove('collapsed'); }
+            if (searchQuery || groupByDomain) { folderEl.classList.remove('collapsed'); }
             bookmarkTreeEl.appendChild(folderEl);
         } else if (item.type === 'bookmark') {
             bookmarkTreeEl.appendChild(createBookmarkElement(item));
@@ -398,11 +342,6 @@ function createBookmarkElement(bookmark) {
     itemEl.className = 'bookmark-item';
     itemEl.dataset.id = bookmark.id;
     itemEl.dataset.url = bookmark.url;
-
-    // Add status indicator
-    const status = getBookmarkStatus(bookmark);
-    if (status === 'unresolved') { itemEl.classList.add('status-unresolved'); }
-    else if (status === 'error') { itemEl.classList.add('status-error'); }
 
     const faviconUrl = getFaviconUrl(bookmark.url);
     if (faviconUrl) {
@@ -642,13 +581,6 @@ function toggleSortOrder() { currentSortOrder = currentSortOrder === 'desc' ? 'a
 
 function updateSortIcon() { sortBtn.textContent = currentSortOrder === 'desc' ? '⬇️' : '⬆️';   sortBtn.title = currentSortOrder === 'desc' ? browser.i18n.getMessage('sidebarSortNewestFirst') : browser.i18n.getMessage('sidebarSortOldestFirst'); }
 
-// Update filter button appearance based on current selection
-function updateFilterButton() {
-  if (statusFilter === 'all') { filterStatusBtn.textContent = '⚡'; filterStatusBtn.classList.remove('active'); filterStatusBtn.title = browser.i18n.getMessage('sidebarFilterByStatus'); }
-  else if (statusFilter === 'unresolved') { filterStatusBtn.textContent = '⚠️'; filterStatusBtn.classList.add('active'); filterStatusBtn.title = browser.i18n.getMessage('sidebarShowingUnresolved'); }
-  else if (statusFilter === 'error') { filterStatusBtn.textContent = '❌'; filterStatusBtn.classList.add('active'); filterStatusBtn.title = browser.i18n.getMessage('sidebarShowingError'); }
-    filterStatusDropdown.querySelectorAll('.filter-option').forEach(opt => { opt.classList.toggle('selected', opt.dataset.filter === statusFilter); });
-}
 
 function sortNodes(nodes) {
     if (!nodes) return [];
@@ -674,19 +606,6 @@ function filterNodes(nodes, query) {
     });
 }
 
-// Filter by link status (unresolved / error)
-function filterByStatus(nodes, filter) {
-    if (filter === 'all') return nodes;
-    return nodes.filter(node => {
-        if (node.type === 'bookmark') {
-            if (filter === 'unresolved') return isUnresolved(node);
-            if (filter === 'error') return hasError(node);
-            return true;
-        }
-        if (node.children) { node.children = filterByStatus(node.children, filter); return node.children.length > 0; }
-        return false;
-    });
-}
 
 function showExcludeToast(domain) {
     const existing = document.querySelector('.exclude-toast'); if (existing) existing.remove();

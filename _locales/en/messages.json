@@ -29,18 +29,6 @@
   "sidebarSearchTitle": {
     "message": "Search bookmarks"
   },
-  "sidebarFilterByStatus": {
-    "message": "Filter by status"
-  },
-  "sidebarFilterAll": {
-    "message": "⚡ All links"
-  },
-  "sidebarFilterUnresolved": {
-    "message": "⚠️ Unresolved"
-  },
-  "sidebarFilterError": {
-    "message": "❌ Error"
-  },
   "sidebarGroupByDomain": {
     "message": "Group by domain"
   },
@@ -100,12 +88,6 @@
   },
   "sidebarSortOldestFirst": {
     "message": "Sort: Oldest First"
-  },
-  "sidebarShowingUnresolved": {
-    "message": "Showing: Unresolved only"
-  },
-  "sidebarShowingError": {
-    "message": "Showing: Error only"
   },
   "sidebarDomainExcluded": {
     "message": "🚫 $domain$ excluded from resolution",
