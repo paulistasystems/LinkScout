@@ -5,6 +5,7 @@ const DEFAULT_SETTINGS = {
     rootFolder: 'LinkScout',
     bookmarkLocation: 'toolbar_____',
     linksPerFolder: 10,
+    openBlankTabLast: true,
     aggregatorDomains: []
 };
 
@@ -16,6 +17,7 @@ async function loadSettings() {
         document.getElementById('rootFolder').value = settings.rootFolder;
         document.getElementById('bookmarkLocation').value = settings.bookmarkLocation;
         document.getElementById('linksPerFolder').value = settings.linksPerFolder;
+        document.getElementById('openBlankTabLast').checked = settings.openBlankTabLast;
 
         console.log('Settings loaded:', settings);
     } catch (error) {
@@ -30,7 +32,8 @@ async function saveSettings() {
     const newSettings = {
         rootFolder: document.getElementById('rootFolder').value.trim() || 'LinkScout',
         bookmarkLocation: document.getElementById('bookmarkLocation').value,
-        linksPerFolder: linksPerFolder > 0 ? linksPerFolder : 10
+        linksPerFolder: linksPerFolder > 0 ? linksPerFolder : 10,
+        openBlankTabLast: document.getElementById('openBlankTabLast').checked
     };
 
     try {

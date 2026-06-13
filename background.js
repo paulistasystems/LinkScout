@@ -54,6 +54,7 @@ const DEFAULT_SETTINGS = {
   rootFolder: 'LinkScout',
   bookmarkLocation: 'toolbar_____', // toolbar_____, menu________, unfiled_____
   enableUrlResolver: false,
+  openBlankTabLast: true,
   aggregatorDomains: [], // Empty by default! Phantom tab is only for user-specified manual targets
   excludedDomains: [] // Domains that should never be resolved automatically
 };
@@ -2181,16 +2182,15 @@ async function openAllInFolderAndRemove(folderId) {
     const bookmarkIds = await collectBookmarkIds(folderId);
     let count = 0;
 
-    // Get parent ID before deleting items, for timestamp update
+    const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
+
     const folders = await browser.bookmarks.get(folderId);
     const parentId = folders[0] ? folders[0].parentId : null;
 
-    // Use a single promise array for tabs.create to be fast
     for (const id of bookmarkIds) {
        try {
            const bms = await browser.bookmarks.get(id);
            if (bms && bms.length > 0 && bms[0].url) {
-               // Fire tab creation without awaiting to make it instant
                browser.tabs.create({ url: bms[0].url, active: false });
                await browser.bookmarks.remove(id);
                count++;
@@ -2200,16 +2200,17 @@ async function openAllInFolderAndRemove(folderId) {
        }
     }
 
-    // Check if folder is empty and delete it if so
+    if (settings.openBlankTabLast && count > 0) {
+      await browser.tabs.create({ active: true });
+    }
+
     const children = await browser.bookmarks.getChildren(folderId);
     if (children.length === 0) {
       await browser.bookmarks.remove(folderId);
-      // Folder deleted, update parent's timestamp
       if (parentId) {
         await updateFolderTimestamp(parentId);
       }
     } else {
-      // Folder remains, update its own timestamp
       await updateFolderTimestamp(folderId);
     }
 
@@ -2225,6 +2226,8 @@ async function openMultipleAndTrash(bookmarkIds) {
     let count = 0;
     let anyParentId = null;
 
+    const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
+
     for (const id of bookmarkIds) {
        try {
            const bms = await browser.bookmarks.get(id);
@@ -2237,6 +2240,10 @@ async function openMultipleAndTrash(bookmarkIds) {
        } catch (e) {
            console.error('Error opening item:', e);
        }
+    }
+
+    if (settings.openBlankTabLast && count > 0) {
+      await browser.tabs.create({ active: true });
     }
 
     if (anyParentId) {

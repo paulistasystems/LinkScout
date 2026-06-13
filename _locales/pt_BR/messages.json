@@ -137,6 +137,12 @@
   "optionsLinksPerFolderHint": {
     "message": "Quando houver mais links que este limite, subpastas numeradas serão criadas (ex.: 1-10, 11-20)"
   },
+  "optionsOpenBlankTabLast": {
+    "message": "Abrir Aba em Branco por Último"
+  },
+  "optionsOpenBlankTabLastDesc": {
+    "message": "Ao abrir todos os favoritos em abas, abre uma aba em branco por último para você continuar navegando."
+  },
   "optionsExcludedDomains": {
     "message": "🚫 Domínios Excluídos"
   },

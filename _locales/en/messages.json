@@ -137,6 +137,12 @@
   "optionsLinksPerFolderHint": {
     "message": "When there are more links than this limit, numbered subfolders will be created (e.g., 1-10, 11-20)"
   },
+  "optionsOpenBlankTabLast": {
+    "message": "Open Blank Tab Last"
+  },
+  "optionsOpenBlankTabLastDesc": {
+    "message": "When opening all bookmarks in tabs, open a blank tab at the end so you can continue browsing."
+  },
   "optionsExcludedDomains": {
     "message": "🚫 Excluded Domains"
   },
