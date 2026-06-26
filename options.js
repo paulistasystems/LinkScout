@@ -14,10 +14,16 @@ async function loadSettings() {
     try {
         const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
 
-        document.getElementById('rootFolder').value = settings.rootFolder;
-        document.getElementById('bookmarkLocation').value = settings.bookmarkLocation;
-        document.getElementById('linksPerFolder').value = settings.linksPerFolder;
-        document.getElementById('openBlankTabLast').checked = settings.openBlankTabLast;
+        // Fixed: Add null checks for DOM elements
+        const rootFolderEl = document.getElementById('rootFolder');
+        const bookmarkLocationEl = document.getElementById('bookmarkLocation');
+        const linksPerFolderEl = document.getElementById('linksPerFolder');
+        const openBlankTabLastEl = document.getElementById('openBlankTabLast');
+
+        if (rootFolderEl) rootFolderEl.value = settings.rootFolder;
+        if (bookmarkLocationEl) bookmarkLocationEl.value = settings.bookmarkLocation;
+        if (linksPerFolderEl) linksPerFolderEl.value = settings.linksPerFolder;
+        if (openBlankTabLastEl) openBlankTabLastEl.checked = settings.openBlankTabLast;
 
         console.log('Settings loaded:', settings);
     } catch (error) {
@@ -28,11 +34,14 @@ async function loadSettings() {
 
 // Save settings
 async function saveSettings() {
+    // Fixed: Handle NaN from parseInt
     const linksPerFolder = parseInt(document.getElementById('linksPerFolder').value, 10);
+    const validLinksPerFolder = (isNaN(linksPerFolder) || linksPerFolder <= 0) ? 10 : linksPerFolder;
+
     const newSettings = {
         rootFolder: document.getElementById('rootFolder').value.trim() || 'LinkScout',
         bookmarkLocation: document.getElementById('bookmarkLocation').value,
-        linksPerFolder: linksPerFolder > 0 ? linksPerFolder : 10,
+        linksPerFolder: validLinksPerFolder,
         openBlankTabLast: document.getElementById('openBlankTabLast').checked
     };
 
@@ -72,13 +81,19 @@ async function saveSettings() {
 }
 
 // Show status message
+// Fixed: Clear previous timeout to prevent memory leak
+let statusTimeout = null;
 function showStatus(message, type) {
     const statusElement = document.getElementById('statusMessage');
+    if (!statusElement) return;
+
+    if (statusTimeout) clearTimeout(statusTimeout);
+
     statusElement.textContent = message;
     statusElement.className = `status-message ${type}`;
     statusElement.style.display = 'block';
 
-    setTimeout(() => {
+    statusTimeout = setTimeout(() => {
         statusElement.style.display = 'none';
     }, 3000);
 }
@@ -89,8 +104,11 @@ document.addEventListener('DOMContentLoaded', () => {
   loadSettings();
     loadShortcutDisplay();
     loadExcludedDomains();
+
+    // Fixed: Add null checks for event listeners
+    const saveButton = document.getElementById('saveButton');
+    if (saveButton) saveButton.addEventListener('click', saveSettings);
 });
-document.getElementById('saveButton').addEventListener('click', saveSettings);
 
 // Load and display the current keyboard shortcut
 async function loadShortcutDisplay() {
@@ -121,11 +139,14 @@ async function loadShortcutDisplay() {
 
 
 // Save on Enter key in text input
-document.getElementById('rootFolder').addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-        saveSettings();
-    }
-});
+const rootFolderInput = document.getElementById('rootFolder');
+if (rootFolderInput) {
+    rootFolderInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            saveSettings();
+        }
+    });
+}
 
 // --- Excluded Domains Management ---
 
@@ -207,10 +228,17 @@ async function removeExcludedDomain(domain) {
     }
 }
 
-document.getElementById('addExcludeDomainBtn').addEventListener('click', addExcludedDomain);
-document.getElementById('excludeDomainInput').addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        addExcludedDomain();
-    }
-});
+// Fixed: Add null checks
+const addExcludeDomainBtn = document.getElementById('addExcludeDomainBtn');
+if (addExcludeDomainBtn) {
+    addExcludeDomainBtn.addEventListener('click', addExcludedDomain);
+}
+const excludeDomainInput = document.getElementById('excludeDomainInput');
+if (excludeDomainInput) {
+    excludeDomainInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            addExcludedDomain();
+        }
+    });
+}

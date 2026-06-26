@@ -1,6 +1,19 @@
 // LinkScout background.js
 
-// Redireciona todos os logs do background para o console da aba ativa (F12 normal do navegador), 
+// Constants for timeout values (Fixed: Extracted magic numbers)
+const TIMEOUTS = {
+  SYNC_DELAY: 2500,
+  FETCH_PAGE_TITLE: 8000,
+  HTML_READ_LIMIT: 50000,
+  PHANTOM_TAB_TIMEOUT: 15000,
+  RESOLVE_DELAY: 200,
+  RESOLVE_SYNC_INTERVAL: 5,
+  HEAD_REQUEST_TIMEOUT: 5000,
+  GET_REQUEST_TIMEOUT: 6000,
+  STATUS_MESSAGE_TIMEOUT: 3000
+};
+
+// Redireciona todos os logs do background para o console da aba ativa (F12 normal do navegador),
 // contornando falhas no console 'about:debugging'.
 const originalConsoles = {
   log: console.log,
@@ -12,15 +25,20 @@ function forwardToActiveTab(type, args) {
   try {
     const formattedArgs = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a));
     browser.tabs.query({active: true, currentWindow: true}).then(tabs => {
-      const activeTab = tabs[0];
+      // Check if tabs array exists and has at least one element
+      const activeTab = tabs && tabs.length > 0 ? tabs[0] : null;
       // Só injeta se for uma página web real (evita páginas de sistema como about: e moz-extension:)
       if (activeTab && activeTab.id && activeTab.url && activeTab.url.startsWith('http')) {
         const code = `console.${type}("[LinkScout 🤖]", ...${JSON.stringify(formattedArgs)});`;
-        browser.tabs.executeScript(activeTab.id, { code: code }).catch(() => {});
+        browser.tabs.executeScript(activeTab.id, { code: code }).catch((e) => {
+          console.warn('[LinkScout] Failed to inject console into tab:', e.message);
+        });
       }
-    }).catch(() => {});
+    }).catch((e) => {
+      console.warn('[LinkScout] Failed to query tabs for console forwarding:', e.message);
+    });
   } catch (e) {
-    // Ignorar falhas de injeção silenciosamente
+    console.warn('[LinkScout] Error in forwardToActiveTab:', e.message);
   }
 }
 
@@ -132,12 +150,15 @@ const DB_VERSION = 3;
 const STORE_NAME = 'savedLinks';
 
 let dbInstance = null;
+let openPromise = null;
 
 async function closeDatabase() {
   if (dbInstance) {
     dbInstance.close();
     dbInstance = null;
   }
+  // Clear any pending open promise
+  openPromise = null;
 }
 
 function generateId() {
@@ -145,13 +166,20 @@ function generateId() {
 }
 
 // Initialize IndexedDB with new schema
+// Fixed: Prevents race conditions from multiple simultaneous calls
 function openDatabase() {
-  return new Promise((resolve, reject) => {
-    if (dbInstance) {
-      resolve(dbInstance);
-      return;
-    }
+  // If already open, return the existing instance
+  if (dbInstance) {
+    return Promise.resolve(dbInstance);
+  }
 
+  // If a promise exists, return it (prevents multiple simultaneous opens)
+  if (openPromise) {
+    return openPromise;
+  }
+
+  // Create new promise and cache it
+  openPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
     request.onupgradeneeded = (event) => {
@@ -172,14 +200,18 @@ function openDatabase() {
 
     request.onsuccess = () => {
       dbInstance = request.result;
+      openPromise = null; // Clear promise after success
       resolve(dbInstance);
     };
 
     request.onerror = () => {
+      openPromise = null; // Clear promise after error
       console.error('Failed to open IndexedDB:', request.error);
       reject(request.error);
     };
   });
+
+  return openPromise;
 }
 
 // Check if a link already exists in the database (uses url index)
@@ -204,9 +236,35 @@ async function isLinkDuplicate(url) {
 // Add a link to the database with full metadata (returns false if duplicate)
 async function addLinkToDatabase(url, title = '', folderId = '', folderPath = '', originalUrl = '', redirectResolved = false) {
   try {
+    // Validate inputs
+    if (!url || typeof url !== 'string') return Promise.reject(new Error('Invalid URL'));
+    if (!title || typeof title !== 'string') title = '';
+    if (!folderId || typeof folderId !== 'string') folderId = '';
+    if (folderPath && typeof folderPath !== 'string') folderPath = '';
+    if (originalUrl && typeof originalUrl !== 'string') originalUrl = '';
+
+    // Validate URL format
+    try {
+      new URL(url);
+      if (originalUrl) new URL(originalUrl);
+    } catch (e) {
+      return Promise.reject(new Error('Invalid URL format'));
+    }
+
     const db = await openDatabase();
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
+      // Fixed: Add transaction complete/error handlers
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => {
+        console.warn('[LinkScout] Transaction failed in addLinkToDatabase:', tx.error);
+        resolve(false);
+      };
+      tx.onabort = () => {
+        console.warn('[LinkScout] Transaction aborted in addLinkToDatabase');
+        resolve(false);
+      };
+
       const store = tx.objectStore(STORE_NAME);
       const record = {
         id: generateId(),
@@ -220,8 +278,12 @@ async function addLinkToDatabase(url, title = '', folderId = '', folderPath = ''
         redirectResolved
       };
       const request = store.add(record);
-      request.onsuccess = () => resolve(true);
-      request.onerror = () => resolve(false);
+      request.onsuccess = () => {
+        // Transaction will handle resolution
+      };
+      request.onerror = () => {
+        // Transaction will handle resolution
+      };
     });
   } catch (error) {
     console.error('Error adding link to database:', error);
@@ -724,7 +786,12 @@ async function buildFolderPathFromNode(removeInfo) {
     let path = removeInfo.node.title;
     let currentParentId = removeInfo.parentId;
 
-    while (currentParentId) {
+    // Fixed: Add depth limit to prevent infinite loops
+    let depth = 0;
+    const MAX_DEPTH = 100;
+
+    while (currentParentId && depth < MAX_DEPTH) {
+      depth++;
       try {
         const parents = await browser.bookmarks.get(currentParentId);
         if (parents && parents[0]) {
@@ -739,6 +806,7 @@ async function buildFolderPathFromNode(removeInfo) {
           break;
         }
       } catch (e) {
+        console.warn('[LinkScout] Error walking parent chain:', e.message);
         break;
       }
     }
@@ -759,10 +827,11 @@ function requestDatabaseSync() {
     return;
   }
   if (syncTimeoutId) clearTimeout(syncTimeoutId);
+  // Fixed: Use constant instead of magic number
   syncTimeoutId = setTimeout(async () => {
     syncTimeoutId = null;
     await syncDatabaseWithBookmarks();
-  }, 2500);
+  }, TIMEOUTS.SYNC_DELAY);
 }
 
 async function forceDatabaseSync() {
@@ -1056,12 +1125,19 @@ function delay(ms) {
 
 // Try to fetch the page title from a URL by loading it and parsing <title>
 async function fetchPageTitle(url) {
+  let timeoutId = null;
   try {
+    const controller = new AbortController();
+    timeoutId = setTimeout(() => controller.abort(), 8000);
+
     const response = await fetch(url, {
       method: 'GET',
       redirect: 'follow',
-      signal: AbortSignal.timeout(8000)
+      signal: controller.signal
     });
+
+    clearTimeout(timeoutId);
+
     if (!response.ok) return null;
 
     // Read only the first chunk of the response to find <title> without downloading the full page
@@ -1086,6 +1162,8 @@ async function fetchPageTitle(url) {
     return null;
   } catch (e) {
     return null;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
   }
 }
 
@@ -1193,6 +1271,8 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
     let fallbackTimeout;
     let tabId = null;
     let childTabIds = [];
+    let tabCreatedListener = null;
+    let tabUpdateListener = null;
 
     console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Iniciando para ${url}`);
     console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Domínios agregadores ativos: ${aggregatorDomains.join(', ')}`);
@@ -1201,27 +1281,37 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
             if (resolved) return;
             resolved = true;
             clearTimeout(fallbackTimeout);
-            browser.tabs.onUpdated.removeListener(tabUpdateListener);
-            browser.tabs.onCreated.removeListener(tabCreatedListener);
+
+            // Fixed: Always remove listeners to prevent memory leaks
+            if (tabCreatedListener) {
+              browser.tabs.onCreated.removeListener(tabCreatedListener);
+              tabCreatedListener = null;
+            }
+            if (tabUpdateListener) {
+              browser.tabs.onUpdated.removeListener(tabUpdateListener);
+              tabUpdateListener = null;
+            }
 
         const tabsToRemove = [tabId, ...childTabIds].filter(id => id !== null);
         if (tabsToRemove.length > 0) {
-            await browser.tabs.remove(tabsToRemove).catch(() => {});
+            await browser.tabs.remove(tabsToRemove).catch((e) => {
+              console.warn('[LinkScout] Failed to remove phantom tabs:', e.message);
+            });
         }
 
         console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Resolvido final -> ${finalUrl}`);
         resolve(normalizeUrl(finalUrl));
       }
 
-    function tabCreatedListener(tab) {
+    tabCreatedListener = function(tab) {
       // Rastrear abas filhas e netas geradas pela aba rastreadora original
       if (tab.openerTabId === tabId || childTabIds.includes(tab.openerTabId)) {
          console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Interceptou nova aba filha gerada: ${tab.id}`);
          childTabIds.push(tab.id);
       }
-    }
+    };
 
-	function tabUpdateListener(updatedTabId, changeInfo, updatedTab) {
+	tabUpdateListener = function(updatedTabId, changeInfo, updatedTab) {
 		if (updatedTabId === tabId || childTabIds.includes(updatedTabId)) {
 			const currentUrl = changeInfo.url || updatedTab.url;
 			if (!currentUrl || currentUrl === url || currentUrl === 'about:blank') return;
@@ -1256,7 +1346,7 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
 				}
 			}
 		}
-	}
+	};
 
 	try {
 		const [previousActiveTab] = await browser.tabs.query({ active: true, currentWindow: true });
@@ -1278,13 +1368,15 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
           }, true);
         `,
         runAt: "document_start"
-	}).catch(() => {});
+	}).catch((e) => {
+      console.warn('[LinkScout] Failed to inject script in phantom tab:', e.message);
+    });
 
       fallbackTimeout = setTimeout(() => {
             if (resolved) return;
             console.warn(`[LinkScout 🔍 Resolve] Phantom Tab: ⏱️ Timeout alcançado (15s) para ${url}. Fechando todas as abas vinculadas.`);
             browser.tabs.get(tabId).then(async t => {
-                if (t.url) {
+                if (t && t.url) {
                     const extracted = extractTargetFromRedirectUrl(t.url);
                     if (extracted && extracted !== t.url) {
                         console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Extração estática no timeout: ${t.url} -> ${extracted}`);
@@ -1298,7 +1390,9 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
                                 console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Extração manual segura via parametro q para ${t.url}`);
                                 return await cleanup(q);
                             }
-                        } catch(e) {}
+                        } catch(e) {
+                          console.warn('[LinkScout] Error parsing Google URL:', e.message);
+                        }
                     }
                     if (t.url.includes('consent.google')) {
                         try {
@@ -1308,11 +1402,14 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
                                 console.log(`[LinkScout 🔍 Resolve] Phantom Tab: Extração de consent redirect para ${t.url}`);
                                 return await cleanup(decodeURIComponent(cont));
                             }
-                        } catch(e) {}
+                        } catch(e) {
+                          console.warn('[LinkScout] Error parsing consent URL:', e.message);
+                        }
                     }
                 }
-                await cleanup(t.url || url);
-            }).catch(async () => {
+                await cleanup(t ? t.url : url);
+            }).catch(async (e) {
+                console.warn('[LinkScout] Error getting phantom tab on timeout:', e.message);
                 await cleanup(url);
             });
         }, 15000);
@@ -2519,19 +2616,8 @@ async function getBookmarkTreeForSidebar() {
   }
 }
 
-// Setup alarm for daily trash cleanup - REMOVED
-// browser.alarms.create('cleanup-trash', { periodInMinutes: 1440 }); // 24 hours
-
-// browser.alarms.onAlarm.addListener((alarm) => {
-//   if (alarm.name === 'cleanup-trash') {
-//     cleanupOldTrashItems();
-//   }
-// });
-
-// Run cleanup on startup - REMOVED
-// cleanupOldTrashItems();
-
 // Resolve all URLs in a folder (and its subfolders) by following redirects
+// Fixed: Dead code removed (commented-out alarm cleanup)
 async function resolveFolderUrls(folderId) {
   console.log(`[LinkScout 🔍 Resolve] ===== INÍCIO: Resolução de pasta (folderId: ${folderId}) =====`);
   resolvingUrlsCount++;

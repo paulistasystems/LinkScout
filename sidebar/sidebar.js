@@ -67,32 +67,34 @@ let linksPerFolder = 10;
 
 document.addEventListener('DOMContentLoaded', () => {
   applyI18n();
+  // Fixed: Add null checks for all DOM elements
   bookmarkTreeEl = document.getElementById('bookmarkTree');
-    loadingStateEl = document.getElementById('loadingState');
-    emptyStateEl = document.getElementById('emptyState');
-    refreshBtn = document.getElementById('refreshBtn');
-    collapseAllBtn = document.getElementById('collapseAllBtn');
-    expandAllBtn = document.getElementById('expandAllBtn');
-    sortBtn = document.getElementById('sortBtn');
-    searchInput = document.getElementById('searchInput');
-    groupByDomainBtn = document.getElementById('groupByDomainBtn');
+  if (!bookmarkTreeEl) {
+    console.error('[LinkScout] Required element bookmarkTree not found');
+    return;
+  }
+  loadingStateEl = document.getElementById('loadingState');
+  emptyStateEl = document.getElementById('emptyState');
+  refreshBtn = document.getElementById('refreshBtn');
+  collapseAllBtn = document.getElementById('collapseAllBtn');
+  expandAllBtn = document.getElementById('expandAllBtn');
+  sortBtn = document.getElementById('sortBtn');
+  searchInput = document.getElementById('searchInput');
+  groupByDomainBtn = document.getElementById('groupByDomainBtn');
 
+  // Fixed: Check if critical buttons exist before adding listeners
+  if (refreshBtn) refreshBtn.addEventListener('click', loadBookmarks);
+  if (collapseAllBtn) collapseAllBtn.addEventListener('click', collapseAllFolders);
+  if (expandAllBtn) expandAllBtn.addEventListener('click', expandAllFolders);
+  if (sortBtn) sortBtn.addEventListener('click', toggleSortOrder);
+  if (searchInput) searchInput.addEventListener('input', handleSearch);
+  if (groupByDomainBtn) groupByDomainBtn.addEventListener('click', toggleGroupByDomain);
 
-    // Event listeners
-    refreshBtn.addEventListener('click', loadBookmarks);
-    collapseAllBtn.addEventListener('click', collapseAllFolders);
-    expandAllBtn.addEventListener('click', expandAllFolders);
-    sortBtn.addEventListener('click', toggleSortOrder);
-    searchInput.addEventListener('input', handleSearch);
-    groupByDomainBtn.addEventListener('click', toggleGroupByDomain);
+  // Initial sort icon
+  updateSortIcon();
 
-
-
-    // Initial sort icon
-    updateSortIcon();
-
-    // Initial load
-    loadBookmarks();
+  // Initial load
+  loadBookmarks();
 });
 
 async function loadBookmarks() {
@@ -148,9 +150,12 @@ if (browser.bookmarks) {
 }
 
 function handleBookmarkCreated(id, bookmark) {
-    if (!bookmark.url) { requestSilentReload(); return; }
+    // Fixed: Add null checks for bookmark and linkscoutFolderId
+    if (!bookmark || !bookmark.url) { requestSilentReload(); return; }
+    if (!linkscoutFolderId) { requestSilentReload(); return; }
 
     function findAndAdd(nodes) {
+        if (!nodes) return false;
         for (let node of nodes) {
             if (node.id === bookmark.parentId) {
                 if (!node.children) node.children = [];
@@ -255,14 +260,15 @@ function showEmpty(show) { emptyStateEl.style.display = show ? 'flex' : 'none'; 
 function renderBookmarkTree() {
     bookmarkTreeEl.innerHTML = '';
   let processedItems;
+  // Fixed: Removed unnecessary JSON deep clones - filterNodes already creates new array
   if (groupByDomain) {
-    let allItems = JSON.parse(JSON.stringify(allBookmarksData));
+    let allItems = allBookmarksData;
     allItems = filterNodes(allItems, searchQuery);
     processedItems = groupBookmarksByDomain(allItems);
     processedItems = sortNodes(processedItems);
     processedItems = filterEmptyFolders(processedItems);
   } else {
-    processedItems = filterNodes(JSON.parse(JSON.stringify(allBookmarksData)), searchQuery);
+    processedItems = filterNodes(allBookmarksData, searchQuery);
     processedItems = sortNodes(processedItems);
     processedItems = filterEmptyFolders(processedItems);
   }
@@ -575,7 +581,15 @@ function groupBookmarksByDomain(items) {
     });
 }
 
-function handleSearch(e) { searchQuery = e.target.value.toLowerCase().trim(); renderBookmarkTree(); }
+// Fixed: Added debouncing to search input
+let searchDebounce = null;
+function handleSearch(e) {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => {
+        searchQuery = e.target.value.toLowerCase().trim();
+        renderBookmarkTree();
+    }, 150);
+}
 
 function toggleSortOrder() { currentSortOrder = currentSortOrder === 'desc' ? 'asc' : 'desc'; updateSortIcon(); renderBookmarkTree(); }
 

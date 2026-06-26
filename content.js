@@ -3,7 +3,8 @@
 
 console.log("🔗 LinkScout: Content script loaded!");
 
-browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+// Fixed: Store listener reference for potential cleanup
+const messageListener = (message, sender, sendResponse) => {
     console.log("📨 LinkScout content: Received message:", message);
 
     if (message.action === "getSelectedLinks") {
@@ -41,7 +42,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     // Check if the anchor is within the selection
                     if (selection.containsNode(anchor, true)) {
                         const href = anchor.href;
-                        // Only add http/https links
+                        // Fixed: Add null check before startsWith
                         if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
                             links.add(href);
                             console.log("✅ Added link:", href);
@@ -50,11 +51,17 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 });
 
                 // Also check if any parent of the selection container is an anchor
+                // Fixed: Add depth limit to prevent infinite loops
                 let parent = element;
-                while (parent && parent !== document.body) {
+                let depth = 0;
+                const MAX_DEPTH = 50;
+
+                while (parent && parent !== document.body && depth < MAX_DEPTH) {
+                    depth++;
                     if (parent.tagName === 'A' && parent.href) {
                         const href = parent.href;
-                        if (href.startsWith('http://') || href.startsWith('https://')) {
+                        // Fixed: Add null check before startsWith
+                        if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
                             links.add(href);
                             console.log("✅ Added parent link:", href);
                         }
@@ -88,4 +95,6 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     return false;
-});
+};
+
+browser.runtime.onMessage.addListener(messageListener);
