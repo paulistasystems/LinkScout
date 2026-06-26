@@ -1884,6 +1884,67 @@ async function createBookmarkStructure(links, pageTitle, settings, originUrl = n
   }
 }
 
+// Function to save a single tab and close it
+async function saveThisTabAndClose(tab) {
+  if (!tab || !tab.url || tab.url.startsWith('about:') || tab.url.startsWith('moz-extension:')) {
+    return;
+  }
+
+  const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
+
+  try {
+    // Get bookmark location from settings
+    let parentId = settings.bookmarkLocation || 'toolbar_____';
+
+    try {
+      await browser.bookmarks.getChildren(parentId);
+    } catch (locationError) {
+      parentId = "toolbar_____";
+      try {
+        await browser.bookmarks.getChildren(parentId);
+      } catch (toolbarError) {
+        parentId = "menu________";
+      }
+    }
+
+    // Create root folder
+    const rootFolderName = settings.rootFolder || 'LinkScout';
+    const linkScoutFolder = await findOrCreateFolder(parentId, rootFolderName);
+
+    // Create a folder named after weekday - dd/mm/yyyy HH:MM
+    const now = new Date();
+    const weekday = now.toLocaleDateString('en-US', { weekday: 'long' });
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const year = now.getFullYear();
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const sessionName = `${weekday} - ${day}/${month}/${year} ${hours}:${minutes}`;
+
+    const sessionFolder = await findOrCreateFolder(linkScoutFolder.id, sessionName, 0);
+    const sessionFolderPath = `${rootFolderName}/${sessionName}`;
+
+    // Create bookmark for the single tab
+    await createOrUpdateBookmark(
+      sessionFolder.id,
+      tab.title || tab.url,
+      tab.url,
+      0,
+      sessionFolderPath,
+      true // skipResolve = true
+    );
+  } catch (error) {
+    console.error('Error saving tab as bookmark:', error);
+  }
+
+  // Close the tab
+  try {
+    await browser.tabs.remove(tab.id);
+  } catch (closeError) {
+    console.error('Error closing tab:', closeError);
+  }
+}
+
 // Function to save all tabs and close them
 async function saveAllTabsAndClose() {
   const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
@@ -2959,6 +3020,12 @@ async function createContextMenus() {
     title: browser.i18n.getMessage("contextMenuSaveAllTabs"),
     contexts: ["tab"]
   });
+
+  browser.contextMenus.create({
+    id: "linkscout-save-this-tab",
+    title: browser.i18n.getMessage("contextMenuSaveThisTab"),
+    contexts: ["tab"]
+  });
 }
 
 // Create menus on startup
@@ -3072,5 +3139,7 @@ browser.contextMenus.onClicked.addListener(async (info, tab) => {
     }
   } else if (info.menuItemId === "linkscout-save-all-tabs" || info.menuItemId === "linkscout-save-all-tabs-tab") {
     await saveAllTabsAndClose();
+  } else if (info.menuItemId === "linkscout-save-this-tab") {
+    await saveThisTabAndClose(tab);
   }
 });

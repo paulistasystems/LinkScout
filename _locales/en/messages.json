@@ -23,6 +23,9 @@
   "contextMenuSaveAllTabs": {
     "message": "🔗 LinkScout: Save and Close All Tabs"
   },
+  "contextMenuSaveThisTab": {
+    "message": "🔗 LinkScout: Save and Close This Tab"
+  },
   "sidebarSearchPlaceholder": {
     "message": "Search..."
   },
