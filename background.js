@@ -1408,7 +1408,7 @@ async function resolveUrlWithPhantomTab(url, aggregatorDomains) {
                     }
                 }
                 await cleanup(t ? t.url : url);
-            }).catch(async (e) {
+            }).catch(async (e) => {
                 console.warn('[LinkScout] Error getting phantom tab on timeout:', e.message);
                 await cleanup(url);
             });
