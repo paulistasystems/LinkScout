@@ -26,6 +26,9 @@
   "contextMenuSaveThisTab": {
     "message": "🔗 LinkScout: Salvar e Fechar Esta Aba"
   },
+  "contextMenuSaveSelectedTabs": {
+    "message": "🔗 LinkScout: Salvar e Fechar Abas Selecionadas"
+  },
   "sidebarSearchPlaceholder": {
     "message": "Buscar..."
   },

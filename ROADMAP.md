@@ -39,6 +39,7 @@ This document details the planning for LinkScout's evolution, including new feat
 ---
 
 ## ✅ Recently Completed
+- [x] **Save and close selected tabs context menu (v2.10.0)**: Added a new context menu item "Save and Close Selected Tabs" that appears when right-clicking on a tab. Works with Firefox's multi-tab selection (Shift+click / Ctrl+click in the tab bar) — only the highlighted tabs are saved as bookmarks (same timestamped session folder structure as "Save All Tabs") and closed, leaving unselected tabs open. Falls back to the active tab if none are highlighted. Refactored the shared save/close core out of `saveAllTabsAndClose()` into a reusable `saveTabsAndClose(tabs)` helper. Added i18n keys for English and Portuguese.
 - [x] **Fix JS syntax error in background.js (v2.9.2)**: Fixed a missing arrow `=>` in the phantom tab `.catch()` handler that broke AMO validation (Unexpected token at line 1411).
 - [x] **Bump for sidebar right margin fix (v2.9.1)**: Version bump to release the folder-content margin-right fix that prevents nested exclude buttons from touching the sidebar edge.
 - [x] **Save and close this tab context menu (v2.9.0)**: Added a new context menu item "Save and Close This Tab" that appears when right-clicking on a tab. This complements the existing "Save and Close All Tabs" feature, allowing users to save individual tabs as bookmarks and close them. The tab is saved to the same session folder structure with timestamp (e.g., "Monday - 26/06/2026 18:30"). Available in both English and Portuguese.

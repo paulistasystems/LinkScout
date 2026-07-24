@@ -1945,10 +1945,13 @@ async function saveThisTabAndClose(tab) {
   }
 }
 
-// Function to save all tabs and close them
-async function saveAllTabsAndClose() {
+// Shared core: saves the given tabs as bookmarks in a timestamped session
+// folder and then closes them. Used by both "save all tabs" and "save
+// selected tabs" flows. `tabs` must already be the tabs to operate on
+// (typically already filtered to the current window; invalid tabs are
+// filtered out here).
+async function saveTabsAndClose(tabs) {
   const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
-  const tabs = await browser.tabs.query({ currentWindow: true });
 
   if (tabs.length === 0) {
     return;
@@ -2105,6 +2108,24 @@ async function saveAllTabsAndClose() {
   } catch (closeError) {
     console.error('Error closing tabs:', closeError);
   }
+}
+
+// Save and close every tab in the current window.
+async function saveAllTabsAndClose() {
+  const tabs = await browser.tabs.query({ currentWindow: true });
+  await saveTabsAndClose(tabs);
+}
+
+// Save and close only the tabs the user has highlighted/selected in the tab
+// bar (Shift+click / Ctrl+click multi-select). Falls back to the active tab
+// when only one or none are highlighted so the menu item still does
+// something useful.
+async function saveSelectedTabsAndClose() {
+  let tabs = await browser.tabs.query({ currentWindow: true, highlighted: true });
+  if (tabs.length === 0) {
+    tabs = await browser.tabs.query({ currentWindow: true, active: true });
+  }
+  await saveTabsAndClose(tabs);
 }
 
 // Check if a folder name matches the numbered subfolder pattern (e.g., "1-10", "11-20")
@@ -3026,6 +3047,12 @@ async function createContextMenus() {
     title: browser.i18n.getMessage("contextMenuSaveThisTab"),
     contexts: ["tab"]
   });
+
+  browser.contextMenus.create({
+    id: "linkscout-save-selected-tabs",
+    title: browser.i18n.getMessage("contextMenuSaveSelectedTabs"),
+    contexts: ["tab"]
+  });
 }
 
 // Create menus on startup
@@ -3141,5 +3168,7 @@ browser.contextMenus.onClicked.addListener(async (info, tab) => {
     await saveAllTabsAndClose();
   } else if (info.menuItemId === "linkscout-save-this-tab") {
     await saveThisTabAndClose(tab);
+  } else if (info.menuItemId === "linkscout-save-selected-tabs") {
+    await saveSelectedTabsAndClose();
   }
 });
