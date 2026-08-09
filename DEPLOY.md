@@ -31,7 +31,7 @@ Create a ZIP file containing only the files needed for the extension, naming it 
 Run the following command in the terminal at the project root:
 ```bash
 VERSION=$(grep '"version"' manifest.json | cut -d '"' -f 4)
-zip -r "LinkScout-$VERSION.zip" . -x "*.git*" "*.DS_Store*" "*.zip" "*.md" ".gitignore" "test.html" "deploy.sh"
+zip -r "LinkScout-$VERSION.zip" . -x "*.git*" "*.DS_Store*" "*.zip" "*.md" ".gitignore" "test.html" "deploy.sh" ".kilo/*"
 ```
 
 ### 4. Commit and Push Changes
