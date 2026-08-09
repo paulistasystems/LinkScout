@@ -313,6 +313,7 @@ function createFolderElement(folder) {
   const moveToTopBtn = document.createElement('button'); moveToTopBtn.className = 'folder-action-btn move-to-top-btn'; moveToTopBtn.title = browser.i18n.getMessage('sidebarMoveToTop'); moveToTopBtn.textContent = '⬆'; actionsDiv.appendChild(moveToTopBtn);
   const moveToBottomBtn = document.createElement('button'); moveToBottomBtn.className = 'folder-action-btn move-to-bottom-btn'; moveToBottomBtn.title = browser.i18n.getMessage('sidebarMoveToBottom'); moveToBottomBtn.textContent = '⬇'; actionsDiv.appendChild(moveToBottomBtn);
     const resolveBtn = document.createElement('button'); resolveBtn.className = 'folder-action-btn resolve-btn';   resolveBtn.title = browser.i18n.getMessage('sidebarResolveUrls'); resolveBtn.textContent = '🔍'; actionsDiv.appendChild(resolveBtn);
+    const copyLinksBtn = document.createElement('button'); copyLinksBtn.className = 'folder-action-btn copy-links-btn'; copyLinksBtn.title = browser.i18n.getMessage('sidebarCopyLinks'); copyLinksBtn.textContent = '📋'; actionsDiv.appendChild(copyLinksBtn);
     const openAllBtn = document.createElement('button'); openAllBtn.className = 'folder-action-btn open-all-btn';   openAllBtn.title = browser.i18n.getMessage('sidebarOpenAllInTabs');
   openAllBtn.textContent = browser.i18n.getMessage('sidebarOpenAll'); actionsDiv.appendChild(openAllBtn);
     const deleteBtn = document.createElement('button'); deleteBtn.className = 'folder-action-btn delete-folder-btn';   deleteBtn.title = browser.i18n.getMessage('sidebarDeleteFolder'); deleteBtn.textContent = '🗑️'; actionsDiv.appendChild(deleteBtn);
@@ -321,12 +322,14 @@ function createFolderElement(folder) {
     moveToTopBtn.addEventListener('click', (e) => { e.stopPropagation(); moveVirtualFolderToTop(folderEl); });
     moveToBottomBtn.addEventListener('click', (e) => { e.stopPropagation(); moveVirtualFolderToBottom(folderEl); });
     resolveBtn.addEventListener('click', (e) => { e.stopPropagation(); resolveVirtualFolder(folder); });
+        copyLinksBtn.addEventListener('click', (e) => { e.stopPropagation(); copyFolderLinks(folder); });
         openAllBtn.addEventListener('click', (e) => { e.stopPropagation(); openAllInVirtualFolder(folder); });
         deleteBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteVirtualFolder(folder); });
     } else {
     moveToTopBtn.addEventListener('click', (e) => { e.stopPropagation(); moveToTopFolder(folder.id, folderEl); });
     moveToBottomBtn.addEventListener('click', (e) => { e.stopPropagation(); moveToBottomFolder(folder.id, folderEl); });
     resolveBtn.addEventListener('click', (e) => { e.stopPropagation(); resolveFolder(folder.id, folderEl); });
+    copyLinksBtn.addEventListener('click', (e) => { e.stopPropagation(); copyFolderLinks(folder); });
         openAllBtn.addEventListener('click', (e) => { e.stopPropagation(); openAllInFolder(folder.id); });
         deleteBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteFolder(folder.id); });
     }
@@ -414,6 +417,21 @@ function collectIdsFromVirtualFolder(folder) {
     const ids = []; if (!folder.children) return ids;
     for (const child of folder.children) { if (child.type === 'bookmark') { ids.push(child.id); } else if (child.type === 'folder' && child.children) { ids.push(...collectIdsFromVirtualFolder(child)); } }
     return ids;
+}
+
+function collectUrlsFromFolder(folder) {
+    const urls = []; if (!folder.children) return urls;
+    for (const child of folder.children) { if (child.type === 'bookmark') { urls.push(child.url); } else if (child.type === 'folder' && child.children) { urls.push(...collectUrlsFromFolder(child)); } }
+    return urls;
+}
+
+async function copyFolderLinks(folder) {
+    const urls = collectUrlsFromFolder(folder);
+    if (urls.length === 0) return;
+    try {
+        await navigator.clipboard.writeText(urls.join('\n'));
+        showToast(browser.i18n.getMessage('sidebarLinksCopied', [String(urls.length)]));
+    } catch (error) { console.error('Error copying folder links:', error); }
 }
 
 async function openAllInVirtualFolder(folder) {
@@ -621,10 +639,14 @@ function filterNodes(nodes, query) {
 }
 
 
-function showExcludeToast(domain) {
-    const existing = document.querySelector('.exclude-toast'); if (existing) existing.remove();
-    const toast = document.createElement('div'); toast.className = 'exclude-toast';   toast.textContent = browser.i18n.getMessage('sidebarDomainExcluded', [domain]);
+function showToast(message) {
+    const existing = document.querySelector('.toast'); if (existing) existing.remove();
+    const toast = document.createElement('div'); toast.className = 'toast'; toast.textContent = message;
     document.body.appendChild(toast);
     requestAnimationFrame(() => toast.classList.add('visible'));
     setTimeout(() => { toast.classList.remove('visible'); setTimeout(() => toast.remove(), 300); }, 2000);
+}
+
+function showExcludeToast(domain) {
+    showToast(browser.i18n.getMessage('sidebarDomainExcluded', [domain]));
 }

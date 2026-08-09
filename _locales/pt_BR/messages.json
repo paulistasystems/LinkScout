@@ -74,6 +74,15 @@
   "sidebarOpenAllInTabs": {
     "message": "Abrir todos em abas"
   },
+  "sidebarCopyLinks": {
+    "message": "Copiar links para a área de transferência"
+  },
+  "sidebarLinksCopied": {
+    "message": "📋 $count$ links copiados",
+    "placeholders": {
+      "count": { "content": "$1", "example": "5" }
+    }
+  },
   "sidebarDeleteFolder": {
     "message": "Excluir pasta"
   },

@@ -74,6 +74,15 @@
   "sidebarOpenAllInTabs": {
     "message": "Open all in tabs"
   },
+  "sidebarCopyLinks": {
+    "message": "Copy links to clipboard"
+  },
+  "sidebarLinksCopied": {
+    "message": "📋 $count$ links copied",
+    "placeholders": {
+      "count": { "content": "$1", "example": "5" }
+    }
+  },
   "sidebarDeleteFolder": {
     "message": "Delete folder"
   },
