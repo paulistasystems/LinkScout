@@ -2366,21 +2366,29 @@ async function openAllInFolderAndRemove(folderId) {
     const folders = await browser.bookmarks.get(folderId);
     const parentId = folders[0] ? folders[0].parentId : null;
 
-    for (const id of bookmarkIds) {
-       try {
-           const bms = await browser.bookmarks.get(id);
-           if (bms && bms.length > 0 && bms[0].url) {
-               browser.tabs.create({ url: bms[0].url, active: false });
-               await browser.bookmarks.remove(id);
-               count++;
-           }
-       } catch (e) {
-           console.error('Error opening item:', e);
-       }
+    let blankTab = null;
+    if (settings.openBlankTabLast && bookmarkIds.length > 0) {
+      blankTab = await browser.tabs.create({ active: false });
     }
 
-    if (settings.openBlankTabLast && count > 0) {
-      await browser.tabs.create({ active: true });
+    let lastTab = null;
+    for (const id of bookmarkIds) {
+        try {
+            const bms = await browser.bookmarks.get(id);
+            if (bms && bms.length > 0 && bms[0].url) {
+                lastTab = await browser.tabs.create({ url: bms[0].url, active: false });
+                await browser.bookmarks.remove(id);
+                count++;
+            }
+        } catch (e) {
+            console.error('Error opening item:', e);
+        }
+    }
+
+    if (count === 0 && blankTab) {
+      await browser.tabs.remove(blankTab.id);
+    } else if (lastTab) {
+      await browser.tabs.update(lastTab.id, { active: true });
     }
 
     const children = await browser.bookmarks.getChildren(folderId);
@@ -2407,22 +2415,30 @@ async function openMultipleAndTrash(bookmarkIds) {
 
     const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
 
-    for (const id of bookmarkIds) {
-       try {
-           const bms = await browser.bookmarks.get(id);
-           if (bms && bms.length > 0 && bms[0].url) {
-               anyParentId = bms[0].parentId;
-               browser.tabs.create({ url: bms[0].url, active: false });
-               await browser.bookmarks.remove(id);
-               count++;
-           }
-       } catch (e) {
-           console.error('Error opening item:', e);
-       }
+    let blankTab = null;
+    if (settings.openBlankTabLast && bookmarkIds.length > 0) {
+      blankTab = await browser.tabs.create({ active: false });
     }
 
-    if (settings.openBlankTabLast && count > 0) {
-      await browser.tabs.create({ active: true });
+    let lastTab = null;
+    for (const id of bookmarkIds) {
+        try {
+            const bms = await browser.bookmarks.get(id);
+            if (bms && bms.length > 0 && bms[0].url) {
+                anyParentId = bms[0].parentId;
+                lastTab = await browser.tabs.create({ url: bms[0].url, active: false });
+                await browser.bookmarks.remove(id);
+                count++;
+            }
+        } catch (e) {
+            console.error('Error opening item:', e);
+        }
+    }
+
+    if (count === 0 && blankTab) {
+      await browser.tabs.remove(blankTab.id);
+    } else if (lastTab) {
+      await browser.tabs.update(lastTab.id, { active: true });
     }
 
     if (anyParentId) {
