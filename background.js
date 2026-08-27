@@ -1946,11 +1946,13 @@ async function saveThisTabAndClose(tab) {
 }
 
 // Shared core: saves the given tabs as bookmarks in a timestamped session
-// folder and then closes them. Used by both "save all tabs" and "save
-// selected tabs" flows. `tabs` must already be the tabs to operate on
-// (typically already filtered to the current window; invalid tabs are
-// filtered out here).
-async function saveTabsAndClose(tabs) {
+// folder and then closes them. Used by the "save all tabs", "save selected
+// tabs", "save tabs to the left/right" flows. `tabs` must already be the tabs
+// to operate on (typically already filtered to the current window; invalid
+// tabs are filtered out here). Only "save all tabs" sets `openBlankTab: true`
+// (default) — every other flow leaves tabs behind, so no placeholder tab is
+// created.
+async function saveTabsAndClose(tabs, { openBlankTab = true } = {}) {
   const settings = await browser.storage.sync.get(DEFAULT_SETTINGS);
 
   if (tabs.length === 0) {
@@ -2101,8 +2103,10 @@ async function saveTabsAndClose(tabs) {
   // Always close all valid tabs, regardless of bookmark save success/failure
   try {
     if (tabsToClose.length > 0) {
-      // Create a new blank tab first to prevent browser from closing
-      await browser.tabs.create({ active: true });
+      if (openBlankTab) {
+        // Create a new blank tab first to prevent browser from closing
+        await browser.tabs.create({ active: true });
+      }
       await browser.tabs.remove(tabsToClose);
     }
   } catch (closeError) {
@@ -2125,7 +2129,31 @@ async function saveSelectedTabsAndClose() {
   if (tabs.length === 0) {
     tabs = await browser.tabs.query({ currentWindow: true, active: true });
   }
-  await saveTabsAndClose(tabs);
+  await saveTabsAndClose(tabs, { openBlankTab: false });
+}
+
+// Save and close every tab to the right of the right-clicked tab (same
+// window). The right-clicked tab itself stays open, so no blank placeholder
+// tab is needed.
+async function saveRightTabsAndClose(tab) {
+  if (!tab || typeof tab.index !== 'number') {
+    return;
+  }
+  const allTabs = await browser.tabs.query({ currentWindow: true });
+  const tabs = allTabs.filter(t => t.index > tab.index);
+  await saveTabsAndClose(tabs, { openBlankTab: false });
+}
+
+// Save and close every tab to the left of the right-clicked tab (same
+// window). The right-clicked tab itself stays open, so no blank placeholder
+// tab is needed.
+async function saveLeftTabsAndClose(tab) {
+  if (!tab || typeof tab.index !== 'number') {
+    return;
+  }
+  const allTabs = await browser.tabs.query({ currentWindow: true });
+  const tabs = allTabs.filter(t => t.index < tab.index);
+  await saveTabsAndClose(tabs, { openBlankTab: false });
 }
 
 // Check if a folder name matches the numbered subfolder pattern (e.g., "1-10", "11-20")
@@ -3069,6 +3097,18 @@ async function createContextMenus() {
     title: browser.i18n.getMessage("contextMenuSaveSelectedTabs"),
     contexts: ["tab"]
   });
+
+  browser.contextMenus.create({
+    id: "linkscout-save-right-tabs",
+    title: browser.i18n.getMessage("contextMenuSaveRightTabs"),
+    contexts: ["tab"]
+  });
+
+  browser.contextMenus.create({
+    id: "linkscout-save-left-tabs",
+    title: browser.i18n.getMessage("contextMenuSaveLeftTabs"),
+    contexts: ["tab"]
+  });
 }
 
 // Create menus on startup
@@ -3186,5 +3226,9 @@ browser.contextMenus.onClicked.addListener(async (info, tab) => {
     await saveThisTabAndClose(tab);
   } else if (info.menuItemId === "linkscout-save-selected-tabs") {
     await saveSelectedTabsAndClose();
+  } else if (info.menuItemId === "linkscout-save-right-tabs") {
+    await saveRightTabsAndClose(tab);
+  } else if (info.menuItemId === "linkscout-save-left-tabs") {
+    await saveLeftTabsAndClose(tab);
   }
 });

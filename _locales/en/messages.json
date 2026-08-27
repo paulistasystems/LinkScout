@@ -29,6 +29,12 @@
   "contextMenuSaveSelectedTabs": {
     "message": "🔗 LinkScout: Save and Close Selected Tabs"
   },
+  "contextMenuSaveRightTabs": {
+    "message": "🔗 LinkScout: Save and Close Tabs to the Right"
+  },
+  "contextMenuSaveLeftTabs": {
+    "message": "🔗 LinkScout: Save and Close Tabs to the Left"
+  },
   "sidebarSearchPlaceholder": {
     "message": "Search..."
   },

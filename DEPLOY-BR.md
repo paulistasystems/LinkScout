@@ -17,7 +17,7 @@ Crie um arquivo ZIP contendo apenas os arquivos necessários para a extensão, n
 Execute o seguinte comando no terminal na raiz do projeto:
 ```bash
 VERSION=$(grep '"version"' manifest.json | cut -d '"' -f 4)
-zip -r "LinkScout-$VERSION.zip" . -x "*.git*" "*.DS_Store*" "*.zip" "*.md" ".gitignore" "test.html" "deploy.sh"
+zip -r "LinkScout-$VERSION.zip" . -x "*.git*" "*.DS_Store*" "*.zip" "*.md" ".gitignore" "test.html" "deploy.sh" ".kilo/*"
 ```
 
 ### 3. Commit e Push das Alterações
